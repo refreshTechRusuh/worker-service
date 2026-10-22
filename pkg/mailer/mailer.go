@@ -1,0 +1,59 @@
+// Package mailer menyediakan Gmail SMTP client untuk worker-service.
+package mailer
+
+import (
+	"context"
+	"crypto/tls"
+	"fmt"
+	"log/slog"
+	"net/smtp"
+	"time"
+
+	"github.com/refreshTechRusuh/worker-service/internal/config"
+)
+
+type Message struct {
+	To      string
+	Subject string
+	HTML    string
+}
+
+type SMTPMailer struct {
+	cfg config.EmailConfig
+	log *slog.Logger
+}
+
+func New(cfg config.EmailConfig, log *slog.Logger) *SMTPMailer {
+	return &SMTPMailer{cfg: cfg, log: log}
+}
+
+func (m *SMTPMailer) Send(ctx context.Context, msg Message) error {
+	addr := fmt.Sprintf("%s:%d", m.cfg.Host, m.cfg.Port)
+	auth := smtp.PlainAuth("", m.cfg.Username, m.cfg.Password, m.cfg.Host)
+
+	headers := fmt.Sprintf(
+		"From: %s\r\nTo: %s\r\nSubject: %s\r\nMIME-Version: 1.0\r\nContent-Type: text/html; charset=UTF-8\r\n\r\n",
+		m.cfg.From, msg.To, msg.Subject,
+	)
+	body := headers + msg.HTML
+
+	_ = &tls.Config{ServerName: m.cfg.Host} // TLS config for future dial variant
+
+	var lastErr error
+	for attempt := 1; attempt <= 2; attempt++ {
+		lastErr = smtp.SendMail(addr, auth, m.cfg.Username, []string{msg.To}, []byte(body))
+		if lastErr == nil {
+			m.log.InfoContext(ctx, "email sent", slog.String("to", msg.To), slog.String("subject", msg.Subject))
+			return nil
+		}
+		m.log.WarnContext(ctx, "smtp send failed", slog.Int("attempt", attempt), slog.String("error", lastErr.Error()))
+		if attempt < 2 {
+			select {
+			case <-ctx.Done():
+				return ctx.Err()
+			case <-time.After(2 * time.Second):
+			}
+		}
+	}
+	return fmt.Errorf("mailer: failed after 2 attempts: %w", lastErr)
+}
