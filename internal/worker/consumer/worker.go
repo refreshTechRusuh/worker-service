@@ -122,8 +122,21 @@ func (w *Worker) consume(ctx context.Context, r *kafkago.Reader) {
 		// Hitung retry attempt dari header X-Retry-Count
 		attempt := parseRetryCount(msg.Headers)
 
+		w.log.InfoContext(ctx, "kafka message received",
+			slog.String("topic", topic),
+			slog.Int64("offset", msg.Offset),
+			slog.Int("attempt", attempt),
+			slog.Int("bytes", len(msg.Value)),
+		)
+
+		start := time.Now()
 		handlerErr := w.dispatch(ctx, msg)
 		if handlerErr == nil {
+			w.log.InfoContext(ctx, "kafka message processed",
+				slog.String("topic", topic),
+				slog.Int64("offset", msg.Offset),
+				slog.String("duration", time.Since(start).String()),
+			)
 			continue
 		}
 
