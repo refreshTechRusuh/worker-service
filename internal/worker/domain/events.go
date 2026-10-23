@@ -4,11 +4,12 @@ package domain
 // BookingCreatedEvent adalah payload topic booking.created.
 // Dikirim Booking Service setelah POST /bookings sukses.
 type BookingCreatedEvent struct {
-	BookingID   string      `json:"bookingId"`
-	EventID     string      `json:"eventId"`
-	Email       string      `json:"email"`       // tujuan email instruksi bayar
-	Items       []ItemEvent `json:"items"`
-	TotalAmount int64       `json:"totalAmount"` // total dalam rupiah
+	BookingID        string      `json:"bookingId"`
+	EventID          string      `json:"eventId"`
+	Email            string      `json:"email"`            // tujuan email instruksi bayar
+	Items            []ItemEvent `json:"items"`
+	TotalAmount      int64       `json:"totalAmount"`      // total dalam rupiah
+	PaymentExpiresAt string      `json:"paymentExpiresAt"` // RFC3339, untuk deadline bayar akurat
 }
 
 // PaymentSucceededEvent adalah payload topic payment.succeeded.

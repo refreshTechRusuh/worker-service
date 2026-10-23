@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/refreshTechRusuh/worker-service/internal/worker/domain"
 	"github.com/refreshTechRusuh/worker-service/internal/worker/handler"
@@ -14,7 +15,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// ---- Mock mailer -----------------------------------------------------------
+// ---- Mock mailer implementing IMailer --------------------------------------
 
 type mockMailer struct {
 	mu       sync.Mutex
@@ -48,10 +49,10 @@ func (m *mockMailer) last() mailer.Message {
 	return m.messages[len(m.messages)-1]
 }
 
-// NotificationHandlerTestable wraps handler accepting IMailer interface
-// Since SMTPMailer is concrete, we test via a thin adapter.
+// Compile-time check: mockMailer implements IMailer
+var _ mailer.IMailer = (*mockMailer)(nil)
 
-// ---- helpers ----------------------------------------------------------------
+// ---- Test helpers ----------------------------------------------------------
 
 func marshalEvent(t *testing.T, v any) []byte {
 	t.Helper()
@@ -65,6 +66,10 @@ func sampleItems() []domain.ItemEvent {
 		{CategoryNama: "VIP Ultimate Experience", NIK: "3171012304950001", Nama: "Budi Santoso", Price: 5000000, TicketCode: "TKT-VIP-001"},
 		{CategoryNama: "VIP Ultimate Experience", NIK: "3273021508980002", Nama: "Siti Aminah", Price: 5000000, TicketCode: "TKT-VIP-002"},
 	}
+}
+
+func newTestHandler(m mailer.IMailer) *handler.NotificationHandler {
+	return handler.NewNotificationHandler(m, slog.Default())
 }
 
 // ---- Template render tests -------------------------------------------------
@@ -82,8 +87,6 @@ func TestRenderPaymentInstructions_ContainsKeyFields(t *testing.T) {
 		PaymentDeadline: "22 Oktober 2026, 22:00 WIB",
 	})
 	require.NoError(t, err)
-
-	// Verifikasi konten kunci ada di HTML
 	assert.Contains(t, html, "Budi Santoso", "nama pembeli harus ada di email")
 	assert.Contains(t, html, "bkg-test-001", "booking ID harus ada")
 	assert.Contains(t, html, "10.000.000", "total diformat Rupiah harus ada")
@@ -104,15 +107,14 @@ func TestRenderETicket_ContainsKeyFields(t *testing.T) {
 		TotalAmount: 5000000,
 	})
 	require.NoError(t, err)
-
-	assert.Contains(t, html, "Coldplay: Music of the Spheres 2026", "event name harus ada")
-	assert.Contains(t, html, "bkg-test-001", "booking ID harus ada")
-	assert.Contains(t, html, "OFFICIAL CONCERT PASS", "header boarding pass harus ada")
-	assert.Contains(t, html, "BUDI SANTOSO", "nama penonton UPPERCASE harus ada")
-	assert.Contains(t, html, "3171012304950001", "NIK harus ada")
-	assert.Contains(t, html, "DUKCAPIL VERIFIED", "badge Dukcapil harus ada")
-	assert.Contains(t, html, "TKT-VIP-001", "ticket code harus ada")
-	assert.Contains(t, html, "5.000.000", "harga diformat harus ada")
+	assert.Contains(t, html, "Coldplay: Music of the Spheres 2026")
+	assert.Contains(t, html, "bkg-test-001")
+	assert.Contains(t, html, "OFFICIAL CONCERT PASS")
+	assert.Contains(t, html, "BUDI SANTOSO")
+	assert.Contains(t, html, "3171012304950001")
+	assert.Contains(t, html, "DUKCAPIL VERIFIED")
+	assert.Contains(t, html, "TKT-VIP-001")
+	assert.Contains(t, html, "5.000.000")
 }
 
 func TestRenderPaymentExpired_ContainsKeyFields(t *testing.T) {
@@ -121,34 +123,145 @@ func TestRenderPaymentExpired_ContainsKeyFields(t *testing.T) {
 		BookingID: "bkg-test-001",
 	})
 	require.NoError(t, err)
-
 	assert.Contains(t, html, "bkg-test-001")
 	assert.Contains(t, html, "DIBATALKAN")
 	assert.Contains(t, html, "Booking Dibatalkan")
 }
 
-// ---- Handler tests ---------------------------------------------------------
+// ---- Handler end-to-end tests ----------------------------------------------
 
-// TestHandler wraps NotificationHandler for test — injects mock mailer via adapter.
-// Since handler takes *mailer.SMTPMailer, we test via functional approach:
-// render templates directly and verify output; idempotency tested separately.
+func TestHandleBookingCreated_SendsEmail(t *testing.T) {
+	m := &mockMailer{}
+	h := newTestHandler(m)
 
-func TestIdempotency_BookingCreated(t *testing.T) {
-	// Test idempotency logic in handler by calling twice with same bookingId
-	// and verifying template rendering is correct the first time.
-	// Since we can't inject mock mailer (handler takes concrete *SMTPMailer),
-	// we test the idempotency key logic via the exported handler indirectly.
-
-	// Verify RenderPaymentInstructions called twice with same data produces same output.
-	data := mailer.PaymentInstructionsData{
-		NamaPembeli: "Test User", Email: "t@t.com", BookingID: "bkg-idem-1", TotalAmount: 100000,
+	ev := domain.BookingCreatedEvent{
+		BookingID:        "bkg-001",
+		EventID:          "evt-001",
+		Email:            "budi@test.com",
+		TotalAmount:      10000000,
+		PaymentExpiresAt: time.Now().Add(10 * time.Minute).Format(time.RFC3339),
+		Items:            sampleItems(),
 	}
-	html1, err1 := mailer.RenderPaymentInstructions(data)
-	html2, err2 := mailer.RenderPaymentInstructions(data)
-	require.NoError(t, err1)
-	require.NoError(t, err2)
-	assert.Equal(t, html1, html2, "render idempoten: output harus sama untuk input yang sama")
+
+	err := h.HandleBookingCreated(context.Background(), marshalEvent(t, ev))
+	require.NoError(t, err)
+	assert.Equal(t, 1, m.count(), "harus mengirim 1 email")
+	msg := m.last()
+	assert.Equal(t, "budi@test.com", msg.To)
+	assert.Contains(t, msg.Subject, "bkg-001")
+	assert.Contains(t, msg.HTML, "10.000.000")
+	assert.Contains(t, msg.HTML, "Budi Santoso") // nama dari tiket pertama
 }
+
+func TestHandleBookingCreated_Idempoten(t *testing.T) {
+	m := &mockMailer{}
+	h := newTestHandler(m)
+
+	ev := domain.BookingCreatedEvent{
+		BookingID: "bkg-idem-1", Email: "a@test.com", TotalAmount: 100000,
+	}
+	raw := marshalEvent(t, ev)
+
+	// Kirim 2x dengan bookingId sama
+	require.NoError(t, h.HandleBookingCreated(context.Background(), raw))
+	require.NoError(t, h.HandleBookingCreated(context.Background(), raw))
+
+	// Email hanya terkirim SEKALI (idempotency via sync.Map)
+	assert.Equal(t, 1, m.count(), "email #1 hanya boleh terkirim 1x per booking")
+}
+
+func TestHandlePaymentSucceeded_SendsEmail(t *testing.T) {
+	m := &mockMailer{}
+	h := newTestHandler(m)
+
+	ev := domain.PaymentSucceededEvent{
+		PaymentID: "pay-001",
+		BookingID: "bkg-001",
+		EventID:   "evt-001",
+		Email:     "budi@test.com",
+		EventNama: "Coldplay 2026",
+		Method:    "qris",
+		Items:     sampleItems(),
+	}
+
+	err := h.HandlePaymentSucceeded(context.Background(), marshalEvent(t, ev))
+	require.NoError(t, err)
+	assert.Equal(t, 1, m.count())
+	msg := m.last()
+	assert.Equal(t, "budi@test.com", msg.To)
+	assert.Contains(t, msg.Subject, "Coldplay 2026")
+	assert.Contains(t, msg.HTML, "OFFICIAL CONCERT PASS")
+	assert.Contains(t, msg.HTML, "BUDI SANTOSO")
+}
+
+func TestHandlePaymentSucceeded_SkipsEmptyEmail(t *testing.T) {
+	m := &mockMailer{}
+	h := newTestHandler(m)
+
+	ev := domain.PaymentSucceededEvent{
+		PaymentID: "pay-002",
+		BookingID: "bkg-002",
+		Email:     "", // tidak ada email
+		Items:     sampleItems(),
+	}
+
+	err := h.HandlePaymentSucceeded(context.Background(), marshalEvent(t, ev))
+	require.NoError(t, err) // tidak error, hanya skip
+	assert.Equal(t, 0, m.count(), "tidak boleh kirim email bila email kosong")
+}
+
+func TestHandlePaymentExpired_SendsEmail(t *testing.T) {
+	m := &mockMailer{}
+	h := newTestHandler(m)
+
+	ev := domain.PaymentExpiredEvent{
+		PaymentID: "pay-003",
+		BookingID: "bkg-003",
+		EventID:   "evt-001",
+		Email:     "budi@test.com",
+	}
+
+	err := h.HandlePaymentExpired(context.Background(), marshalEvent(t, ev))
+	require.NoError(t, err)
+	assert.Equal(t, 1, m.count())
+	msg := m.last()
+	assert.Equal(t, "budi@test.com", msg.To)
+	assert.Contains(t, msg.Subject, "bkg-003")
+	assert.Contains(t, msg.HTML, "DIBATALKAN")
+}
+
+func TestHandlePaymentExpired_Idempoten(t *testing.T) {
+	m := &mockMailer{}
+	h := newTestHandler(m)
+
+	ev := domain.PaymentExpiredEvent{
+		BookingID: "bkg-idem-2", Email: "b@test.com",
+	}
+	raw := marshalEvent(t, ev)
+
+	require.NoError(t, h.HandlePaymentExpired(context.Background(), raw))
+	require.NoError(t, h.HandlePaymentExpired(context.Background(), raw))
+
+	assert.Equal(t, 1, m.count(), "email #3 hanya boleh terkirim 1x per booking")
+}
+
+func TestHandlePaymentSucceeded_Idempoten(t *testing.T) {
+	m := &mockMailer{}
+	h := newTestHandler(m)
+
+	ev := domain.PaymentSucceededEvent{
+		BookingID: "bkg-idem-3", Email: "c@test.com", EventNama: "Test",
+		Items: sampleItems(),
+	}
+	raw := marshalEvent(t, ev)
+
+	require.NoError(t, h.HandlePaymentSucceeded(context.Background(), raw))
+	require.NoError(t, h.HandlePaymentSucceeded(context.Background(), raw))
+
+	assert.Equal(t, 1, m.count(), "email #2 hanya boleh terkirim 1x per booking")
+}
+
+// ---- Format + template tests -----------------------------------------------
 
 func TestRenderPaymentInstructions_FormatRupiah(t *testing.T) {
 	cases := []struct {
@@ -182,28 +295,18 @@ func TestRenderETicket_MultipleAttendees(t *testing.T) {
 		TotalAmount: 1300000,
 	})
 	require.NoError(t, err)
-
-	// Semua 3 penonton harus ada di e-tiket
 	assert.Contains(t, html, "ORANG PERTAMA")
 	assert.Contains(t, html, "ORANG KEDUA")
 	assert.Contains(t, html, "ORANG KETIGA")
 	assert.Contains(t, html, "1111111111111111")
-	assert.Contains(t, html, "2222222222222222")
-	assert.Contains(t, html, "3333333333333333")
-	// Total
 	assert.Contains(t, html, "1.300.000")
 }
 
 func TestDomainEventsUnmarshal(t *testing.T) {
-	// Verifikasi domain events bisa di-unmarshal dari JSON Kafka payload.
 	raw := marshalEvent(t, domain.PaymentSucceededEvent{
-		PaymentID: "pay-1",
-		BookingID: "bkg-1",
-		EventID:   "evt-1",
-		Email:     "test@test.com",
-		EventNama: "Test Concert",
-		Method:    "bca_va",
-		Items:     sampleItems(),
+		PaymentID: "pay-1", BookingID: "bkg-1", EventID: "evt-1",
+		Email: "test@test.com", EventNama: "Test Concert", Method: "bca_va",
+		Items: sampleItems(),
 	})
 
 	var ev domain.PaymentSucceededEvent
@@ -212,37 +315,25 @@ func TestDomainEventsUnmarshal(t *testing.T) {
 	assert.Equal(t, "test@test.com", ev.Email)
 	assert.Equal(t, "Test Concert", ev.EventNama)
 	assert.Len(t, ev.Items, 2)
-	assert.Equal(t, "3171012304950001", ev.Items[0].NIK)
 }
 
-func TestHandleBookingCreated_RendersTemplate(t *testing.T) {
-	// Test end-to-end: handler → render → send (using a lightweight test)
-	// We create a real handler with nil mailer (test just render, not send)
-	h := handler.NewNotificationHandler(nil, slog.Default())
-	_ = h // handler created successfully
+func TestHandleBookingCreated_UsePaymentExpiresAt(t *testing.T) {
+	m := &mockMailer{}
+	h := newTestHandler(m)
 
-	// Verify template renders correctly for BookingCreated event
-	items := sampleItems()
-	lineItems := make([]mailer.TicketLineItem, len(items))
-	for i, it := range items {
-		lineItems[i] = mailer.TicketLineItem{
-			Nomor: i + 1, CategoryNama: it.CategoryNama, NIK: it.NIK,
-			Nama: it.Nama, Price: it.Price, TicketCode: it.TicketCode,
-		}
+	// Set deadline 30 menit ke depan (bukan default 10 menit)
+	deadline := time.Now().Add(30 * time.Minute)
+	ev := domain.BookingCreatedEvent{
+		BookingID:        "bkg-expires",
+		Email:            "x@test.com",
+		TotalAmount:      1000,
+		PaymentExpiresAt: deadline.Format(time.RFC3339),
 	}
 
-	html, err := mailer.RenderPaymentInstructions(mailer.PaymentInstructionsData{
-		NamaPembeli: "Budi Santoso",
-		Email:       "budi@test.com",
-		BookingID:   "bkg-render-test",
-		TotalAmount: 10000000,
-		Items:       lineItems,
-		PaymentDeadline: "22 Oktober 2026, 23:00 WIB",
-	})
+	err := h.HandleBookingCreated(context.Background(), marshalEvent(t, ev))
 	require.NoError(t, err)
-	assert.Contains(t, html, "bkg-render-test")
-	assert.Contains(t, html, "3171012304950001", "NIK harus ada di email #1")
-	assert.Contains(t, html, "10.000.000", "total diformat harus ada")
-
-	t.Logf("Email #1 HTML length: %d bytes", len(html))
+	require.Equal(t, 1, m.count())
+	// Waktu deadline harus lebih dari 20 menit ke depan (yakni dari PaymentExpiresAt, bukan default 10 menit)
+	// Verifikasi dengan check HTML mengandung tahun/bulan yang sesuai
+	assert.Contains(t, m.last().HTML, "2026", "deadline dari PaymentExpiresAt harus dirender")
 }

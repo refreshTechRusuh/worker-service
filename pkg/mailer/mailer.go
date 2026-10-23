@@ -12,21 +12,31 @@ import (
 	"github.com/refreshTechRusuh/worker-service/internal/config"
 )
 
+// Message adalah satu email yang akan dikirim.
 type Message struct {
 	To      string
 	Subject string
 	HTML    string
 }
 
+// IMailer adalah interface pengiriman email.
+// Memungkinkan inject mock di unit test tanpa koneksi SMTP nyata.
+type IMailer interface {
+	Send(ctx context.Context, msg Message) error
+}
+
+// SMTPMailer mengimplementasikan IMailer via Gmail SMTP (port 587 STARTTLS).
 type SMTPMailer struct {
 	cfg config.EmailConfig
 	log *slog.Logger
 }
 
+// New membuat instance SMTPMailer baru.
 func New(cfg config.EmailConfig, log *slog.Logger) *SMTPMailer {
 	return &SMTPMailer{cfg: cfg, log: log}
 }
 
+// Send mengirim email HTML via SMTP dengan retry 1x.
 func (m *SMTPMailer) Send(ctx context.Context, msg Message) error {
 	addr := fmt.Sprintf("%s:%d", m.cfg.Host, m.cfg.Port)
 	auth := smtp.PlainAuth("", m.cfg.Username, m.cfg.Password, m.cfg.Host)
@@ -43,10 +53,14 @@ func (m *SMTPMailer) Send(ctx context.Context, msg Message) error {
 	for attempt := 1; attempt <= 2; attempt++ {
 		lastErr = smtp.SendMail(addr, auth, m.cfg.Username, []string{msg.To}, []byte(body))
 		if lastErr == nil {
-			m.log.InfoContext(ctx, "email sent", slog.String("to", msg.To), slog.String("subject", msg.Subject))
+			m.log.InfoContext(ctx, "email sent",
+				slog.String("to", msg.To),
+				slog.String("subject", msg.Subject))
 			return nil
 		}
-		m.log.WarnContext(ctx, "smtp send failed", slog.Int("attempt", attempt), slog.String("error", lastErr.Error()))
+		m.log.WarnContext(ctx, "smtp send failed",
+			slog.Int("attempt", attempt),
+			slog.String("error", lastErr.Error()))
 		if attempt < 2 {
 			select {
 			case <-ctx.Done():
@@ -57,3 +71,6 @@ func (m *SMTPMailer) Send(ctx context.Context, msg Message) error {
 	}
 	return fmt.Errorf("mailer: failed after 2 attempts: %w", lastErr)
 }
+
+// Compile-time check: SMTPMailer implements IMailer.
+var _ IMailer = (*SMTPMailer)(nil)

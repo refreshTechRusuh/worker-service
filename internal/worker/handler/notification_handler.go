@@ -15,14 +15,14 @@ import (
 
 // NotificationHandler memproses 3 jenis event Kafka dan mengirim email HTML.
 type NotificationHandler struct {
-	mailer *mailer.SMTPMailer
+	mailer mailer.IMailer
 	log    *slog.Logger
 	// In-memory idempotency store — key: bookingId+":"+emailType.
 	// Production: ganti dengan Redis SET NX atau tabel DB notification_sent_log.
 	sent sync.Map
 }
 
-func NewNotificationHandler(m *mailer.SMTPMailer, log *slog.Logger) *NotificationHandler {
+func NewNotificationHandler(m mailer.IMailer, log *slog.Logger) *NotificationHandler {
 	return &NotificationHandler{mailer: m, log: log}
 }
 
@@ -50,9 +50,17 @@ func (h *NotificationHandler) HandleBookingCreated(ctx context.Context, raw []by
 		namaPembeli = items[0].Nama
 	}
 
-	// Deadline bayar = sekarang + 10 menit (sesuai TTL server)
-	// Di production lebih akurat: sertakan payment_expires_at di event payload.
-	deadline := mailer.FormatTimeWIB(time.Now().Add(10 * time.Minute))
+	// Deadline bayar: gunakan PaymentExpiresAt dari event bila tersedia,
+	// fallback ke sekarang + 10 menit.
+	var paymentDeadline string
+	if ev.PaymentExpiresAt != "" {
+		if t, err := time.Parse(time.RFC3339, ev.PaymentExpiresAt); err == nil {
+			paymentDeadline = mailer.FormatTimeWIB(t)
+		}
+	}
+	if paymentDeadline == "" {
+		paymentDeadline = mailer.FormatTimeWIB(time.Now().Add(10 * time.Minute))
+	}
 
 	html, err := mailer.RenderPaymentInstructions(mailer.PaymentInstructionsData{
 		NamaPembeli:     namaPembeli,
@@ -61,7 +69,7 @@ func (h *NotificationHandler) HandleBookingCreated(ctx context.Context, raw []by
 		WaktuTransaksi:  time.Now(),
 		TotalAmount:     ev.TotalAmount,
 		Items:           items,
-		PaymentDeadline: deadline,
+		PaymentDeadline: paymentDeadline,
 	})
 	if err != nil {
 		h.log.ErrorContext(ctx, "render payment instructions failed", slog.Any("err", err))
