@@ -2,7 +2,9 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
+	"net/http"
 	"os"
 	"os/signal"
 	"syscall"
@@ -24,6 +26,23 @@ func main() {
 	notifHandler := handler.NewNotificationHandler(m, slog.Default())
 	worker := consumer.New(cfg.Kafka, notifHandler, slog.Default())
 
+	// Health server -- Cloud Run butuh HTTP endpoint untuk startup/liveness probe
+	mux := http.NewServeMux()
+	mux.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte("ok")) //nolint:errcheck
+	})
+	srv := &http.Server{
+		Addr:    fmt.Sprintf(":%d", cfg.App.Port),
+		Handler: mux,
+	}
+	go func() {
+		slog.Info("worker-service health server listening", "port", cfg.App.Port)
+		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			slog.Error("health server error", "err", err)
+		}
+	}()
+
 	slog.Info("worker-service starting", "env", cfg.App.Env)
 	worker.Start(ctx)
 
@@ -33,5 +52,6 @@ func main() {
 	slog.Info("worker-service shutting down...")
 	cancel()
 	worker.Close()
+	srv.Close() //nolint:errcheck
 	slog.Info("worker-service stopped")
 }
