@@ -55,11 +55,13 @@ func (m *SMTPMailer) Send(ctx context.Context, msg Message) error {
 		if lastErr == nil {
 			m.log.InfoContext(ctx, "email sent",
 				slog.String("to", msg.To),
-				slog.String("subject", msg.Subject))
+				slog.String("subject", msg.Subject),
+				slog.Int("attempt", attempt))
 			return nil
 		}
 		m.log.WarnContext(ctx, "smtp send failed",
 			slog.Int("attempt", attempt),
+			slog.String("to", msg.To),
 			slog.String("error", lastErr.Error()))
 		if attempt < 2 {
 			select {
@@ -69,6 +71,10 @@ func (m *SMTPMailer) Send(ctx context.Context, msg Message) error {
 			}
 		}
 	}
+	m.log.ErrorContext(ctx, "email failed after all attempts",
+		slog.String("to", msg.To),
+		slog.String("subject", msg.Subject),
+		slog.String("error", lastErr.Error()))
 	return fmt.Errorf("mailer: failed after 2 attempts: %w", lastErr)
 }
 
