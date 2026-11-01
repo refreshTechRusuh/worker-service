@@ -60,10 +60,12 @@ jobs:
           service: ${{ env.SERVICE_NAME }}
           region: ${{ env.REGION }}
           image: ${{ env.IMAGE }}:${{ github.sha }}
-          # env vars dan secrets diset saat initial deploy (Task 8/9)
-          # workflow ini hanya update image -- tidak overwrite env
           # worker-service: min-instances=1 agar Kafka consumer tidak mati
-          flags: --no-traffic --min-instances=1
+          flags: >-
+            --allow-unauthenticated
+            --min-instances=1
+            --set-env-vars=APP_ENV=${{ vars.APP_ENV }},APP_PORT=${{ vars.APP_PORT }},LOG_LEVEL=${{ vars.LOG_LEVEL }},LOG_FORMAT=${{ vars.LOG_FORMAT }},KAFKA_BROKERS=${{ vars.KAFKA_BROKERS }},KAFKA_TLS=${{ vars.KAFKA_TLS }},KAFKA_CONSUMER_GROUP=${{ vars.KAFKA_CONSUMER_GROUP }},EMAIL_HOST=${{ vars.EMAIL_HOST }},EMAIL_PORT=${{ vars.EMAIL_PORT }},EMAIL_USERNAME=${{ vars.EMAIL_USERNAME }},EMAIL_FROM=${{ vars.EMAIL_FROM }}
+            --set-secrets=KAFKA_USERNAME=confluent-api-key:latest,KAFKA_PASSWORD=confluent-api-secret:latest,EMAIL_PASSWORD=smtp-password:latest
 
       - name: Route traffic to new revision
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
