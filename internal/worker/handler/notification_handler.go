@@ -42,7 +42,8 @@ func (h *NotificationHandler) HandleBookingCreated(ctx context.Context, raw []by
 	}
 
 	// Map event items → TicketLineItem
-	items := mapItems(ev.Items)
+	// Email #1 (instruksi bayar) tidak perlu QR code, pass "" agar tidak di-generate.
+	items := mapItems(ev.Items, "")
 
 	// Nama pembeli dari tiket pertama, fallback ke "Pelanggan"
 	namaPembeli := "Pelanggan"
@@ -103,7 +104,7 @@ func (h *NotificationHandler) HandlePaymentSucceeded(ctx context.Context, raw []
 		return nil // tidak bisa kirim tanpa email — log warning, jangan error (tidak retry)
 	}
 
-	items := mapItems(ev.Items)
+	items := mapItems(ev.Items, ev.BookingID)
 	// Hitung total dari items
 	var total int64
 	for _, it := range items {
@@ -172,13 +173,27 @@ func (h *NotificationHandler) HandlePaymentExpired(ctx context.Context, raw []by
 // ---- helpers ----------------------------------------------------------------
 
 // mapItems mengkonversi []domain.ItemEvent ke []mailer.TicketLineItem.
-func mapItems(domainItems []domain.ItemEvent) []mailer.TicketLineItem {
+// bookingID dipakai sebagai konten QR code (kalau kosong, QR tidak di-generate).
+func mapItems(domainItems []domain.ItemEvent, bookingID string) []mailer.TicketLineItem {
 	items := make([]mailer.TicketLineItem, 0, len(domainItems))
 	for i, it := range domainItems {
 		ticketCode := it.TicketCode
 		if ticketCode == "" {
 			ticketCode = fmt.Sprintf("TKT-%d", i+1)
 		}
+
+		// QR content: "<bookingID>:<ticketCode>" sehingga unik per tiket.
+		// Scanner di gerbang bisa parse bookingID dan ticketCode dari satu scan.
+		qrContent := bookingID
+		if ticketCode != "" {
+			qrContent = bookingID + ":" + ticketCode
+		}
+		qrDataURL, err := mailer.GenerateQRDataURL(qrContent)
+		if err != nil {
+			// Kalau gagal generate QR, fallback ke SVG placeholder di template.
+			qrDataURL = ""
+		}
+
 		items = append(items, mailer.TicketLineItem{
 			Nomor:        i + 1,
 			CategoryNama: it.CategoryNama,
@@ -186,6 +201,7 @@ func mapItems(domainItems []domain.ItemEvent) []mailer.TicketLineItem {
 			NIK:          it.NIK,
 			Price:        it.Price,
 			TicketCode:   ticketCode,
+			QRCodeBase64: qrDataURL,
 		})
 	}
 	return items

@@ -7,10 +7,13 @@ package mailer
 
 import (
 	"bytes"
+	"encoding/base64"
 	"fmt"
 	"html/template"
 	"strings"
 	"time"
+
+	qrcode "github.com/skip2/go-qrcode"
 )
 
 // ---- Data types -------------------------------------------------------------
@@ -49,6 +52,7 @@ type TicketLineItem struct {
 	NIK          string // 16 digit
 	Price        int64
 	TicketCode   string // mis. "TKT-VIP-99412-1"
+	QRCodeBase64 string // data URL "data:image/png;base64,..." untuk inline embed di HTML
 }
 
 // ---- Template functions -----------------------------------------------------
@@ -58,6 +62,18 @@ var templateFuncs = template.FuncMap{
 	"formatTime":   formatTimeWIB,
 	"upper":        strings.ToUpper,
 	"seq":          func(n int) []int { s := make([]int, n); for i := range s { s[i] = i + 1 }; return s },
+}
+
+// GenerateQRDataURL membuat QR code dari content dan mengembalikan data URL
+// "data:image/png;base64,..." yang bisa langsung dipakai di atribut src tag <img>.
+// Size 256 cukup untuk scan di gerbang turnstile.
+// Dipanggil dari notification_handler.go sebelum render template.
+func GenerateQRDataURL(content string) (string, error) {
+	png, err := qrcode.Encode(content, qrcode.Medium, 256)
+	if err != nil {
+		return "", fmt.Errorf("generate qr code: %w", err)
+	}
+	return "data:image/png;base64," + base64.StdEncoding.EncodeToString(png), nil
 }
 
 // RenderPaymentInstructions merender HTML email #1 (instruksi bayar).
@@ -241,12 +257,17 @@ Tunjukkan <strong>QR Code tiket</strong> bersama <strong>KTP Fisik Asli</strong>
 <tr><td style="color:#1e293b;font-family:monospace;font-size:14px;font-weight:700;padding-bottom:8px;">{{.NIK}}</td></tr>
 <tr><td><span style="background-color:#ecfdf5;color:#065f46;font-size:10px;font-weight:700;padding:3px 8px;border-radius:6px;border:1px solid #a7f3d0;display:inline-block;font-family:Arial,sans-serif;">&#10003; DUKCAPIL VERIFIED: AKTIF</span></td></tr>
 </table></td>
-<!-- QR placeholder SVG -->
+<!-- QR code dari BookingID — di-generate server-side sebelum render template -->
 <td width="120" align="center" valign="middle" style="background-color:#0f172a;border-radius:12px;padding:12px;">
-<div style="width:96px;height:96px;background-color:#ffffff;border-radius:8px;padding:6px;margin:0 auto;text-align:center;">
+<div style="width:96px;height:96px;background-color:#ffffff;border-radius:8px;padding:4px;margin:0 auto;text-align:center;">
+{{if .QRCodeBase64}}
+<img src="{{.QRCodeBase64}}" width="88" height="88" alt="QR Code Tiket" style="display:block;border-radius:4px;" />
+{{else}}
 <svg width="84" height="84" viewBox="0 0 24 24" fill="#0f172a" xmlns="http://www.w3.org/2000/svg">
 <path d="M2 2h8v8H2V2zm2 2v4h4V4H4zm10-2h8v8h-8V2zm2 2v4h4V4h-4zM2 14h8v8H2v-8zm2 2v4h4v-4H4zm14 0h4v4h-4v-4zm-4-2h2v2h-2v-2zm4 4h2v4h-2v-4zm-4 2h2v2h-2v-2zm-2-4h2v2h-2v-2zm4-2h4v2h-4v-2zM6 6h2v2H6V6zm12 0h2v2h-2V6zM6 18h2v2H6v-2z"/>
-</svg></div>
+</svg>
+{{end}}
+</div>
 {{if .TicketCode}}<div style="color:#94a3b8;font-family:monospace;font-size:9px;font-weight:700;margin-top:6px;">{{.TicketCode}}</div>{{end}}
 </td></tr></table></div>
 </div>
