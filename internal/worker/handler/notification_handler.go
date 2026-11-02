@@ -42,12 +42,13 @@ func (h *NotificationHandler) HandleBookingCreated(ctx context.Context, raw []by
 	}
 
 	// Map event items → TicketLineItem
-	items := mapItems(ev.Items)
+	// Email #1 (instruksi bayar) tidak perlu QR code, pass "" agar tidak di-generate.
+	items := mapItems(ev.Items, "")
 
 	// Nama pembeli dari tiket pertama, fallback ke "Pelanggan"
-	namaPembeli := "Pelanggan"
-	if len(items) > 0 && items[0].Nama != "" {
-		namaPembeli = items[0].Nama
+	buyerName := "Pelanggan"
+	if len(items) > 0 && items[0].Name != "" {
+		buyerName = items[0].Name
 	}
 
 	// Deadline bayar: gunakan PaymentExpiresAt dari event bila tersedia,
@@ -63,7 +64,7 @@ func (h *NotificationHandler) HandleBookingCreated(ctx context.Context, raw []by
 	}
 
 	html, err := mailer.RenderPaymentInstructions(mailer.PaymentInstructionsData{
-		NamaPembeli:     namaPembeli,
+		BuyerName:     buyerName,
 		Email:           ev.Email,
 		BookingID:       ev.BookingID,
 		WaktuTransaksi:  time.Now(),
@@ -103,22 +104,22 @@ func (h *NotificationHandler) HandlePaymentSucceeded(ctx context.Context, raw []
 		return nil // tidak bisa kirim tanpa email — log warning, jangan error (tidak retry)
 	}
 
-	items := mapItems(ev.Items)
+	items := mapItems(ev.Items, ev.BookingID)
 	// Hitung total dari items
 	var total int64
 	for _, it := range items {
 		total += it.Price
 	}
 
-	eventNama := ev.EventNama
-	if eventNama == "" {
-		eventNama = "Konser" // fallback
+	eventName := ev.EventName
+	if eventName == "" {
+		eventName = "Konser" // fallback
 	}
 
 	html, err := mailer.RenderETicket(mailer.ETicketData{
 		Email:       ev.Email,
 		BookingID:   ev.BookingID,
-		EventNama:   eventNama,
+		EventName:   eventName,
 		Items:       items,
 		TotalAmount: total,
 	})
@@ -129,7 +130,7 @@ func (h *NotificationHandler) HandlePaymentSucceeded(ctx context.Context, raw []
 
 	return h.mailer.Send(ctx, mailer.Message{
 		To:      ev.Email,
-		Subject: fmt.Sprintf("[Rusuh Booking] E-Tiket Resmi — %s", eventNama),
+		Subject: fmt.Sprintf("[Rusuh Booking] E-Tiket Resmi — %s", eventName),
 		HTML:    html,
 	})
 }
@@ -172,20 +173,35 @@ func (h *NotificationHandler) HandlePaymentExpired(ctx context.Context, raw []by
 // ---- helpers ----------------------------------------------------------------
 
 // mapItems mengkonversi []domain.ItemEvent ke []mailer.TicketLineItem.
-func mapItems(domainItems []domain.ItemEvent) []mailer.TicketLineItem {
+// bookingID dipakai sebagai konten QR code (kalau kosong, QR tidak di-generate).
+func mapItems(domainItems []domain.ItemEvent, bookingID string) []mailer.TicketLineItem {
 	items := make([]mailer.TicketLineItem, 0, len(domainItems))
 	for i, it := range domainItems {
 		ticketCode := it.TicketCode
 		if ticketCode == "" {
 			ticketCode = fmt.Sprintf("TKT-%d", i+1)
 		}
+
+		// QR content: "<bookingID>:<ticketCode>" sehingga unik per tiket.
+		// Scanner di gerbang bisa parse bookingID dan ticketCode dari satu scan.
+		qrContent := bookingID
+		if ticketCode != "" {
+			qrContent = bookingID + ":" + ticketCode
+		}
+		qrDataURL, err := mailer.GenerateQRDataURL(qrContent)
+		if err != nil {
+			// Kalau gagal generate QR, fallback ke SVG placeholder di template.
+			qrDataURL = ""
+		}
+
 		items = append(items, mailer.TicketLineItem{
 			Nomor:        i + 1,
-			CategoryNama: it.CategoryNama,
-			Nama:         it.Nama,
+			CategoryName: it.CategoryName,
+			Name:         it.Name,
 			NIK:          it.NIK,
 			Price:        it.Price,
 			TicketCode:   ticketCode,
+			QRCodeBase64: qrDataURL,
 		})
 	}
 	return items

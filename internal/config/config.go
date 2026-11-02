@@ -44,7 +44,7 @@ type EmailConfig struct {
 func Load() (*Config, error) {
 	_ = godotenv.Load()
 	return &Config{
-		App:   AppConfig{Env: getEnv("APP_ENV", "local"), Port: getEnvInt("APP_PORT", 8080)},
+		App:   AppConfig{Env: getEnv("APP_ENV", "local"), Port: getEnvInt("PORT", getEnvInt("APP_PORT", 8080))},
 		Log:   LogConfig{Level: getEnv("LOG_LEVEL", "info"), Format: getEnv("LOG_FORMAT", "json")},
 		Kafka: KafkaConfig{
 			Brokers:       getEnv("KAFKA_BROKERS", "localhost:9092"),

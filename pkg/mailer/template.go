@@ -7,17 +7,20 @@ package mailer
 
 import (
 	"bytes"
+	"encoding/base64"
 	"fmt"
 	"html/template"
 	"strings"
 	"time"
+
+	qrcode "github.com/skip2/go-qrcode"
 )
 
 // ---- Data types -------------------------------------------------------------
 
 // PaymentInstructionsData adalah data untuk email #1.
 type PaymentInstructionsData struct {
-	NamaPembeli      string         // dari field Items[0].Nama, atau "Pelanggan"
+	BuyerName       string         // dari field Items[0].Name, atau "Pelanggan"
 	Email            string
 	BookingID        string
 	WaktuTransaksi   time.Time
@@ -30,7 +33,7 @@ type PaymentInstructionsData struct {
 type ETicketData struct {
 	Email      string
 	BookingID  string
-	EventNama  string
+	EventName  string
 	Items      []TicketLineItem
 	TotalAmount int64
 }
@@ -44,11 +47,12 @@ type PaymentExpiredData struct {
 // TicketLineItem adalah satu tiket dalam email.
 type TicketLineItem struct {
 	Nomor        int
-	CategoryNama string // mis. "VIP Ultimate Experience"
-	Nama         string // nama penonton (UPPERCASE di e-tiket)
+	CategoryName string // mis. "VIP Ultimate Experience"
+	Name         string // nama penonton (UPPERCASE di e-tiket)
 	NIK          string // 16 digit
 	Price        int64
 	TicketCode   string // mis. "TKT-VIP-99412-1"
+	QRCodeBase64 string // data URL "data:image/png;base64,..." untuk inline embed di HTML
 }
 
 // ---- Template functions -----------------------------------------------------
@@ -58,6 +62,18 @@ var templateFuncs = template.FuncMap{
 	"formatTime":   formatTimeWIB,
 	"upper":        strings.ToUpper,
 	"seq":          func(n int) []int { s := make([]int, n); for i := range s { s[i] = i + 1 }; return s },
+}
+
+// GenerateQRDataURL membuat QR code dari content dan mengembalikan data URL
+// "data:image/png;base64,..." yang bisa langsung dipakai di atribut src tag <img>.
+// Size 256 cukup untuk scan di gerbang turnstile.
+// Dipanggil dari notification_handler.go sebelum render template.
+func GenerateQRDataURL(content string) (string, error) {
+	png, err := qrcode.Encode(content, qrcode.Medium, 256)
+	if err != nil {
+		return "", fmt.Errorf("generate qr code: %w", err)
+	}
+	return "data:image/png;base64," + base64.StdEncoding.EncodeToString(png), nil
 }
 
 // RenderPaymentInstructions merender HTML email #1 (instruksi bayar).
@@ -142,7 +158,7 @@ const paymentInstructionsTmpl = `<!DOCTYPE html>
 <div style="width:58px;height:58px;background-color:#eff6ff;border-radius:50%;border:2px solid #93c5fd;margin:0 auto 16px auto;line-height:58px;font-size:28px;text-align:center;">&#128393;</div>
 <h2 style="color:#0f172a;font-size:22px;font-weight:800;margin-bottom:8px;font-family:Arial,sans-serif;">Booking Berhasil Dibuat!</h2>
 <p style="color:#64748b;font-size:14px;line-height:1.5;max-width:480px;margin:0 auto;font-family:Arial,sans-serif;">
-Halo <strong style="color:#0f172a;">{{.NamaPembeli}}</strong>, booking tiket kamu sudah tercatat. Selesaikan pembayaran sebelum batas waktu untuk mengamankan tiket.
+Halo <strong style="color:#0f172a;">{{.BuyerName}}</strong>, booking tiket kamu sudah tercatat. Selesaikan pembayaran sebelum batas waktu untuk mengamankan tiket.
 </p></td></tr>
 
 <!-- TRANSACTION SUMMARY -->
@@ -163,8 +179,8 @@ Halo <strong style="color:#0f172a;">{{.NamaPembeli}}</strong>, booking tiket kam
 {{range .Items}}
 <tr>
 <td style="padding:8px 0;font-family:Arial,sans-serif;">
-<strong style="color:#0f172a;font-size:14px;">{{.CategoryNama}} &times; 1</strong>
-<div style="font-size:11px;color:#64748b;margin-top:2px;">NIK: {{.NIK}}{{if .Nama}} (a.n. {{.Nama}}){{end}}</div>
+<strong style="color:#0f172a;font-size:14px;">{{.CategoryName}} &times; 1</strong>
+<div style="font-size:11px;color:#64748b;margin-top:2px;">NIK: {{.NIK}}{{if .Name}} (a.n. {{.Name}}){{end}}</div>
 </td>
 <td align="right" valign="top" style="padding:8px 0;font-weight:700;color:#0f172a;font-family:Arial,sans-serif;">{{formatRupiah .Price}}</td>
 </tr>
@@ -202,7 +218,7 @@ Booking akan otomatis dibatalkan jika pembayaran tidak diterima sebelum batas wa
 // ============================================================
 const eTicketTmpl = `<!DOCTYPE html>
 <html lang="id"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0">
-<title>E-Tiket – {{.EventNama}}</title></head>
+<title>E-Tiket – {{.EventName}}</title></head>
 <body style="margin:0;padding:0;background-color:#f1f5f9;">
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background-color:#f1f5f9;padding:32px 12px;">
 <tr><td align="center">
@@ -212,7 +228,7 @@ const eTicketTmpl = `<!DOCTYPE html>
 <tr><td style="padding:32px 32px 28px 32px;background:#090d16;border-bottom:3px solid #6366f1;">
 <table role="presentation" width="100%"><tr><td>
 <span style="background-color:#4338ca;color:#e0e7ff;font-size:10px;font-weight:800;padding:4px 9px;border-radius:6px;text-transform:uppercase;letter-spacing:1px;font-family:Arial,sans-serif;">OFFICIAL CONCERT PASS</span>
-<h1 style="color:#ffffff;font-size:22px;font-weight:900;margin:10px 0 4px 0;font-family:Arial,sans-serif;">{{.EventNama}}</h1>
+<h1 style="color:#ffffff;font-size:22px;font-weight:900;margin:10px 0 4px 0;font-family:Arial,sans-serif;">{{.EventName}}</h1>
 <p style="color:#818cf8;font-size:12px;font-weight:700;margin:4px 0 0 0;font-family:Arial,sans-serif;">Booking: {{.BookingID}}</p>
 </td></tr></table></td></tr>
 
@@ -227,7 +243,7 @@ Tunjukkan <strong>QR Code tiket</strong> bersama <strong>KTP Fisik Asli</strong>
 <div style="background-color:#ffffff;border:2px solid #e2e8f0;border-radius:16px;margin-bottom:24px;overflow:hidden;box-shadow:0 4px 12px rgba(0,0,0,0.05);">
 <!-- Pass Header -->
 <table role="presentation" width="100%" style="background:linear-gradient(90deg,#4f46e5 0%,#6366f1 100%);color:#ffffff;padding:12px 20px;">
-<tr><td><span style="font-size:11px;font-weight:800;letter-spacing:1px;text-transform:uppercase;font-family:Arial,sans-serif;">TIKET #{{.Nomor}} &bull; {{.CategoryNama}}</span></td>
+<tr><td><span style="font-size:11px;font-weight:800;letter-spacing:1px;text-transform:uppercase;font-family:Arial,sans-serif;">TIKET #{{.Nomor}} &bull; {{.CategoryName}}</span></td>
 {{if .TicketCode}}<td align="right"><span style="font-size:11px;background-color:rgba(255,255,255,0.25);padding:3px 8px;border-radius:6px;font-weight:700;font-family:Arial,sans-serif;">{{.TicketCode}}</span></td>{{end}}
 </tr></table>
 <!-- Pass Body -->
@@ -236,17 +252,22 @@ Tunjukkan <strong>QR Code tiket</strong> bersama <strong>KTP Fisik Asli</strong>
 <td valign="top" style="padding-right:16px;">
 <table role="presentation" width="100%" style="font-size:12px;line-height:1.6;">
 <tr><td style="color:#64748b;font-family:Arial,sans-serif;">Nama Pemegang Tiket:</td></tr>
-<tr><td style="color:#0f172a;font-size:15px;font-weight:800;padding-bottom:8px;font-family:Arial,sans-serif;">{{upper .Nama}}</td></tr>
+<tr><td style="color:#0f172a;font-size:15px;font-weight:800;padding-bottom:8px;font-family:Arial,sans-serif;">{{upper .Name}}</td></tr>
 <tr><td style="color:#64748b;font-family:Arial,sans-serif;">Nomor Induk Kependudukan (NIK):</td></tr>
 <tr><td style="color:#1e293b;font-family:monospace;font-size:14px;font-weight:700;padding-bottom:8px;">{{.NIK}}</td></tr>
 <tr><td><span style="background-color:#ecfdf5;color:#065f46;font-size:10px;font-weight:700;padding:3px 8px;border-radius:6px;border:1px solid #a7f3d0;display:inline-block;font-family:Arial,sans-serif;">&#10003; DUKCAPIL VERIFIED: AKTIF</span></td></tr>
 </table></td>
-<!-- QR placeholder SVG -->
+<!-- QR code dari BookingID — di-generate server-side sebelum render template -->
 <td width="120" align="center" valign="middle" style="background-color:#0f172a;border-radius:12px;padding:12px;">
-<div style="width:96px;height:96px;background-color:#ffffff;border-radius:8px;padding:6px;margin:0 auto;text-align:center;">
+<div style="width:96px;height:96px;background-color:#ffffff;border-radius:8px;padding:4px;margin:0 auto;text-align:center;">
+{{if .QRCodeBase64}}
+<img src="{{.QRCodeBase64}}" width="88" height="88" alt="QR Code Tiket" style="display:block;border-radius:4px;" />
+{{else}}
 <svg width="84" height="84" viewBox="0 0 24 24" fill="#0f172a" xmlns="http://www.w3.org/2000/svg">
 <path d="M2 2h8v8H2V2zm2 2v4h4V4H4zm10-2h8v8h-8V2zm2 2v4h4V4h-4zM2 14h8v8H2v-8zm2 2v4h4v-4H4zm14 0h4v4h-4v-4zm-4-2h2v2h-2v-2zm4 4h2v4h-2v-4zm-4 2h2v2h-2v-2zm-2-4h2v2h-2v-2zm4-2h4v2h-4v-2zM6 6h2v2H6V6zm12 0h2v2h-2V6zM6 18h2v2H6v-2z"/>
-</svg></div>
+</svg>
+{{end}}
+</div>
 {{if .TicketCode}}<div style="color:#94a3b8;font-family:monospace;font-size:9px;font-weight:700;margin-top:6px;">{{.TicketCode}}</div>{{end}}
 </td></tr></table></div>
 </div>
