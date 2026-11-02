@@ -111,15 +111,15 @@ func (h *NotificationHandler) HandlePaymentSucceeded(ctx context.Context, raw []
 		total += it.Price
 	}
 
-	eventNama := ev.EventName
-	if eventNama == "" {
-		eventNama = "Konser" // fallback
+	eventName := ev.EventName
+	if eventName == "" {
+		eventName = "Konser" // fallback
 	}
 
 	html, err := mailer.RenderETicket(mailer.ETicketData{
 		Email:       ev.Email,
 		BookingID:   ev.BookingID,
-		EventName:   eventNama,
+		EventName:   eventName,
 		Items:       items,
 		TotalAmount: total,
 	})
@@ -130,7 +130,7 @@ func (h *NotificationHandler) HandlePaymentSucceeded(ctx context.Context, raw []
 
 	return h.mailer.Send(ctx, mailer.Message{
 		To:      ev.Email,
-		Subject: fmt.Sprintf("[Rusuh Booking] E-Tiket Resmi — %s", eventNama),
+		Subject: fmt.Sprintf("[Rusuh Booking] E-Tiket Resmi — %s", eventName),
 		HTML:    html,
 	})
 }

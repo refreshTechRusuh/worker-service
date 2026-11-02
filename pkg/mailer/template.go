@@ -158,7 +158,7 @@ const paymentInstructionsTmpl = `<!DOCTYPE html>
 <div style="width:58px;height:58px;background-color:#eff6ff;border-radius:50%;border:2px solid #93c5fd;margin:0 auto 16px auto;line-height:58px;font-size:28px;text-align:center;">&#128393;</div>
 <h2 style="color:#0f172a;font-size:22px;font-weight:800;margin-bottom:8px;font-family:Arial,sans-serif;">Booking Berhasil Dibuat!</h2>
 <p style="color:#64748b;font-size:14px;line-height:1.5;max-width:480px;margin:0 auto;font-family:Arial,sans-serif;">
-Halo <strong style="color:#0f172a;">{{.NamaPembeli}}</strong>, booking tiket kamu sudah tercatat. Selesaikan pembayaran sebelum batas waktu untuk mengamankan tiket.
+Halo <strong style="color:#0f172a;">{{.BuyerName}}</strong>, booking tiket kamu sudah tercatat. Selesaikan pembayaran sebelum batas waktu untuk mengamankan tiket.
 </p></td></tr>
 
 <!-- TRANSACTION SUMMARY -->
