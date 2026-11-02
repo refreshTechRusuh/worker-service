@@ -46,9 +46,9 @@ func (h *NotificationHandler) HandleBookingCreated(ctx context.Context, raw []by
 	items := mapItems(ev.Items, "")
 
 	// Nama pembeli dari tiket pertama, fallback ke "Pelanggan"
-	namaPembeli := "Pelanggan"
-	if len(items) > 0 && items[0].Nama != "" {
-		namaPembeli = items[0].Nama
+	buyerName := "Pelanggan"
+	if len(items) > 0 && items[0].Name != "" {
+		buyerName = items[0].Name
 	}
 
 	// Deadline bayar: gunakan PaymentExpiresAt dari event bila tersedia,
@@ -64,7 +64,7 @@ func (h *NotificationHandler) HandleBookingCreated(ctx context.Context, raw []by
 	}
 
 	html, err := mailer.RenderPaymentInstructions(mailer.PaymentInstructionsData{
-		NamaPembeli:     namaPembeli,
+		BuyerName:     buyerName,
 		Email:           ev.Email,
 		BookingID:       ev.BookingID,
 		WaktuTransaksi:  time.Now(),
@@ -111,7 +111,7 @@ func (h *NotificationHandler) HandlePaymentSucceeded(ctx context.Context, raw []
 		total += it.Price
 	}
 
-	eventNama := ev.EventNama
+	eventNama := ev.EventName
 	if eventNama == "" {
 		eventNama = "Konser" // fallback
 	}
@@ -119,7 +119,7 @@ func (h *NotificationHandler) HandlePaymentSucceeded(ctx context.Context, raw []
 	html, err := mailer.RenderETicket(mailer.ETicketData{
 		Email:       ev.Email,
 		BookingID:   ev.BookingID,
-		EventNama:   eventNama,
+		EventName:   eventNama,
 		Items:       items,
 		TotalAmount: total,
 	})
@@ -196,8 +196,8 @@ func mapItems(domainItems []domain.ItemEvent, bookingID string) []mailer.TicketL
 
 		items = append(items, mailer.TicketLineItem{
 			Nomor:        i + 1,
-			CategoryNama: it.CategoryNama,
-			Nama:         it.Nama,
+			CategoryName: it.CategoryName,
+			Name:         it.Name,
 			NIK:          it.NIK,
 			Price:        it.Price,
 			TicketCode:   ticketCode,

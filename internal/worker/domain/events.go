@@ -19,7 +19,7 @@ type PaymentSucceededEvent struct {
 	BookingID string      `json:"bookingId"`
 	EventID   string      `json:"eventId"`
 	Email     string      `json:"email"`       // tujuan email e-tiket
-	EventNama string      `json:"eventNama"`   // nama event untuk e-tiket
+	EventName string      `json:"eventName"`   // nama event untuk e-tiket
 	Method    string      `json:"method"`
 	Items     []ItemEvent `json:"items"`
 }
@@ -36,9 +36,9 @@ type PaymentExpiredEvent struct {
 // ItemEvent adalah satu tiket dalam event payload.
 type ItemEvent struct {
 	CategoryID   string `json:"categoryId"`
-	CategoryNama string `json:"categoryNama"` // nama kategori untuk e-tiket
+	CategoryName string `json:"categoryName"` // nama kategori untuk e-tiket
 	NIK          string `json:"nik"`
-	Nama         string `json:"nama"`         // nama penonton
+	Name         string `json:"name"`         // nama penonton
 	Price        int64  `json:"price"`
 	TicketCode   string `json:"ticketCode"`   // kode tiket unik, mis. TKT-VIP-99412-1
 }
