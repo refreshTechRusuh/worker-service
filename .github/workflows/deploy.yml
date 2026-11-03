@@ -61,12 +61,22 @@ jobs:
           region: ${{ env.REGION }}
           image: ${{ env.IMAGE }}:${{ github.sha }}
           # worker-service: min-instances=1 agar Kafka consumer tidak mati
+          # EMAIL_FROM diset via step terpisah karena nilainya mengandung spasi
           flags: >-
             --allow-unauthenticated
             --min-instances=1
             --set-env-vars=APP_ENV=${{ vars.APP_ENV }},APP_PORT=${{ vars.APP_PORT }},LOG_LEVEL=${{ vars.LOG_LEVEL }},LOG_FORMAT=${{ vars.LOG_FORMAT }},KAFKA_BROKERS=${{ vars.KAFKA_BROKERS }},KAFKA_TLS=${{ vars.KAFKA_TLS }},KAFKA_CONSUMER_GROUP=${{ vars.KAFKA_CONSUMER_GROUP }},EMAIL_HOST=${{ vars.EMAIL_HOST }},EMAIL_PORT=${{ vars.EMAIL_PORT }},EMAIL_USERNAME=${{ vars.EMAIL_USERNAME }}
-            --set-env-vars=EMAIL_FROM=${{ vars.EMAIL_FROM }}
             --set-secrets=EMAIL_PASSWORD=smtp-password:latest
+
+      # Set EMAIL_FROM secara terpisah karena nilainya mengandung spasi dan angle brackets
+      # yang tidak bisa di-pass lewat flags: block tanpa shell memecahnya
+      - name: Set EMAIL_FROM env var
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        run: |
+          gcloud run services update ${{ env.SERVICE_NAME }} \
+            --region=${{ env.REGION }} \
+            --project=${{ env.PROJECT_ID }} \
+            --update-env-vars="EMAIL_FROM=${{ vars.EMAIL_FROM }}"
 
       - name: Route traffic to new revision
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
