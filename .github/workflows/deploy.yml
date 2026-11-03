@@ -65,6 +65,8 @@ jobs:
           flags: >-
             --allow-unauthenticated
             --min-instances=1
+            --vpc-connector=${{ vars.VPC_CONNECTOR }}
+            --vpc-egress=private-ranges-only
             --set-env-vars=APP_ENV=${{ vars.APP_ENV }},APP_PORT=${{ vars.APP_PORT }},LOG_LEVEL=${{ vars.LOG_LEVEL }},LOG_FORMAT=${{ vars.LOG_FORMAT }},KAFKA_BROKERS=${{ vars.KAFKA_BROKERS }},KAFKA_TLS=${{ vars.KAFKA_TLS }},KAFKA_CONSUMER_GROUP=${{ vars.KAFKA_CONSUMER_GROUP }},EMAIL_HOST=${{ vars.EMAIL_HOST }},EMAIL_PORT=${{ vars.EMAIL_PORT }},EMAIL_USERNAME=${{ vars.EMAIL_USERNAME }}
             --set-secrets=EMAIL_PASSWORD=smtp-password:latest
 
