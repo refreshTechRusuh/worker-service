@@ -122,7 +122,11 @@ func (w *Worker) consume(ctx context.Context, r *kafkago.Reader) {
 		// Hitung retry attempt dari header X-Retry-Count
 		attempt := parseRetryCount(msg.Headers)
 
-		w.log.InfoContext(ctx, "kafka message received",
+		// Extract trace context dari Kafka header (dikirim producer) dan buka span consume.
+		msgCtx := wkafka.ExtractTraceContext(ctx, msg)
+		msgCtx, consumeSpan := wkafka.StartConsumeSpan(msgCtx, topic)
+
+		w.log.InfoContext(msgCtx, "kafka message received",
 			slog.String("topic", topic),
 			slog.Int64("offset", msg.Offset),
 			slog.Int("attempt", attempt),
@@ -130,15 +134,19 @@ func (w *Worker) consume(ctx context.Context, r *kafkago.Reader) {
 		)
 
 		start := time.Now()
-		handlerErr := w.dispatch(ctx, msg)
+		handlerErr := w.dispatch(msgCtx, msg)
 		if handlerErr == nil {
-			w.log.InfoContext(ctx, "kafka message processed",
+			consumeSpan.End()
+			w.log.InfoContext(msgCtx, "kafka message processed",
 				slog.String("topic", topic),
 				slog.Int64("offset", msg.Offset),
 				slog.String("duration", time.Since(start).String()),
 			)
 			continue
 		}
+
+		consumeSpan.RecordError(handlerErr)
+		consumeSpan.End()
 
 		w.log.Error("handler error",
 			slog.String("topic", topic),
