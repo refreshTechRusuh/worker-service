@@ -63,8 +63,8 @@ func marshalEvent(t *testing.T, v any) []byte {
 
 func sampleItems() []domain.ItemEvent {
 	return []domain.ItemEvent{
-		{CategoryNama: "VIP Ultimate Experience", NIK: "3171012304950001", Nama: "Budi Santoso", Price: 5000000, TicketCode: "TKT-VIP-001"},
-		{CategoryNama: "VIP Ultimate Experience", NIK: "3273021508980002", Nama: "Siti Aminah", Price: 5000000, TicketCode: "TKT-VIP-002"},
+		{CategoryName: "VIP Ultimate Experience", NIK: "3171012304950001", Name: "Budi Santoso", Price: 5000000, TicketCode: "TKT-VIP-001"},
+		{CategoryName: "VIP Ultimate Experience", NIK: "3273021508980002", Name: "Siti Aminah", Price: 5000000, TicketCode: "TKT-VIP-002"},
 	}
 }
 
@@ -76,13 +76,13 @@ func newTestHandler(m mailer.IMailer) *handler.NotificationHandler {
 
 func TestRenderPaymentInstructions_ContainsKeyFields(t *testing.T) {
 	html, err := mailer.RenderPaymentInstructions(mailer.PaymentInstructionsData{
-		NamaPembeli: "Budi Santoso",
+		BuyerName:   "Budi Santoso",
 		Email:       "budi@test.com",
 		BookingID:   "bkg-test-001",
 		TotalAmount: 10000000,
 		Items: []mailer.TicketLineItem{
-			{Nomor: 1, CategoryNama: "VIP", NIK: "1234567890123456", Price: 5000000, TicketCode: "TKT-001"},
-			{Nomor: 2, CategoryNama: "VIP", NIK: "1234567890123457", Price: 5000000, TicketCode: "TKT-002"},
+			{Nomor: 1, CategoryName: "VIP", NIK: "1234567890123456", Price: 5000000, TicketCode: "TKT-001"},
+			{Nomor: 2, CategoryName: "VIP", NIK: "1234567890123457", Price: 5000000, TicketCode: "TKT-002"},
 		},
 		PaymentDeadline: "22 Oktober 2026, 22:00 WIB",
 	})
@@ -100,9 +100,9 @@ func TestRenderETicket_ContainsKeyFields(t *testing.T) {
 	html, err := mailer.RenderETicket(mailer.ETicketData{
 		Email:     "budi@test.com",
 		BookingID: "bkg-test-001",
-		EventNama: "Coldplay: Music of the Spheres 2026",
+		EventName: "Coldplay: Music of the Spheres 2026",
 		Items: []mailer.TicketLineItem{
-			{Nomor: 1, CategoryNama: "VIP", NIK: "3171012304950001", Nama: "Budi Santoso", Price: 5000000, TicketCode: "TKT-VIP-001"},
+			{Nomor: 1, CategoryName: "VIP", NIK: "3171012304950001", Name: "Budi Santoso", Price: 5000000, TicketCode: "TKT-VIP-001"},
 		},
 		TotalAmount: 5000000,
 	})
@@ -179,7 +179,7 @@ func TestHandlePaymentSucceeded_SendsEmail(t *testing.T) {
 		BookingID: "bkg-001",
 		EventID:   "evt-001",
 		Email:     "budi@test.com",
-		EventNama: "Coldplay 2026",
+		EventName: "Coldplay 2026",
 		Method:    "qris",
 		Items:     sampleItems(),
 	}
@@ -250,7 +250,7 @@ func TestHandlePaymentSucceeded_Idempoten(t *testing.T) {
 	h := newTestHandler(m)
 
 	ev := domain.PaymentSucceededEvent{
-		BookingID: "bkg-idem-3", Email: "c@test.com", EventNama: "Test",
+		BookingID: "bkg-idem-3", Email: "c@test.com", EventName: "Test",
 		Items: sampleItems(),
 	}
 	raw := marshalEvent(t, ev)
@@ -286,11 +286,11 @@ func TestRenderETicket_MultipleAttendees(t *testing.T) {
 	html, err := mailer.RenderETicket(mailer.ETicketData{
 		Email:     "budi@test.com",
 		BookingID: "bkg-multi",
-		EventNama: "Test Concert",
+		EventName: "Test Concert",
 		Items: []mailer.TicketLineItem{
-			{Nomor: 1, CategoryNama: "VIP", NIK: "1111111111111111", Nama: "Orang Pertama", Price: 500000, TicketCode: "TKT-001"},
-			{Nomor: 2, CategoryNama: "VIP", NIK: "2222222222222222", Nama: "Orang Kedua", Price: 500000, TicketCode: "TKT-002"},
-			{Nomor: 3, CategoryNama: "Regular", NIK: "3333333333333333", Nama: "Orang Ketiga", Price: 300000, TicketCode: "TKT-003"},
+			{Nomor: 1, CategoryName: "VIP", NIK: "1111111111111111", Name: "Orang Pertama", Price: 500000, TicketCode: "TKT-001"},
+			{Nomor: 2, CategoryName: "VIP", NIK: "2222222222222222", Name: "Orang Kedua", Price: 500000, TicketCode: "TKT-002"},
+			{Nomor: 3, CategoryName: "Regular", NIK: "3333333333333333", Name: "Orang Ketiga", Price: 300000, TicketCode: "TKT-003"},
 		},
 		TotalAmount: 1300000,
 	})
@@ -305,7 +305,7 @@ func TestRenderETicket_MultipleAttendees(t *testing.T) {
 func TestDomainEventsUnmarshal(t *testing.T) {
 	raw := marshalEvent(t, domain.PaymentSucceededEvent{
 		PaymentID: "pay-1", BookingID: "bkg-1", EventID: "evt-1",
-		Email: "test@test.com", EventNama: "Test Concert", Method: "bca_va",
+		Email: "test@test.com", EventName: "Test Concert", Method: "bca_va",
 		Items: sampleItems(),
 	})
 
@@ -313,7 +313,7 @@ func TestDomainEventsUnmarshal(t *testing.T) {
 	require.NoError(t, json.Unmarshal(raw, &ev))
 	assert.Equal(t, "bkg-1", ev.BookingID)
 	assert.Equal(t, "test@test.com", ev.Email)
-	assert.Equal(t, "Test Concert", ev.EventNama)
+	assert.Equal(t, "Test Concert", ev.EventName)
 	assert.Len(t, ev.Items, 2)
 }
 

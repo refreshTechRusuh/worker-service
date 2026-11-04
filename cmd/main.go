@@ -8,11 +8,13 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 
 	"github.com/refreshTechRusuh/worker-service/internal/config"
 	"github.com/refreshTechRusuh/worker-service/internal/worker/consumer"
 	"github.com/refreshTechRusuh/worker-service/internal/worker/handler"
 	"github.com/refreshTechRusuh/worker-service/pkg/mailer"
+	pkgotel "github.com/refreshTechRusuh/worker-service/pkg/otel"
 )
 
 func main() {
@@ -21,6 +23,18 @@ func main() {
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
+
+	// Setup OpenTelemetry TracerProvider.
+	otelShutdown, err := pkgotel.SetupTracerProvider(ctx, "worker-service", "1.0.0")
+	if err != nil {
+		slog.Warn("otel: failed to setup tracer provider, tracing disabled", "err", err)
+	} else {
+		defer func() {
+			shutCtx, cancelOtel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancelOtel()
+			_ = otelShutdown(shutCtx)
+		}()
+	}
 
 	m := mailer.New(cfg.Email, slog.Default())
 	notifHandler := handler.NewNotificationHandler(m, slog.Default())
