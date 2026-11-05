@@ -1,0 +1,111 @@
+name: Build & Deploy to Cloud Run
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+env:
+  PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
+  REGION: ${{ secrets.GCP_REGION }}
+  SERVICE_NAME: worker-service
+  AR_HOST: asia-southeast2-docker.pkg.dev
+  IMAGE: asia-southeast2-docker.pkg.dev/${{ secrets.GCP_PROJECT_ID }}/rusuh/worker-service
+
+permissions:
+  contents: read
+  id-token: write   # diperlukan untuk Workload Identity Federation
+
+jobs:
+  build-and-deploy:
+    name: Test, Build, Push & Deploy
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Vet & unit test
+        run: |
+          go vet ./...
+          go test ./... -coverprofile=coverage.out
+          # Report coverage sebagai informasi. Gate akan dinaikkan ke 90% bertahap
+          # seiring Task 9 (unit test coverage) diselesaikan per service.
+          go tool cover -func=coverage.out | grep total
+
+      - name: Authenticate to Google Cloud (WIF)
+        id: auth
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ secrets.GCP_SERVICE_ACCOUNT }}
+
+      - name: Set up Cloud SDK
+        uses: google-github-actions/setup-gcloud@v2
+
+      - name: Configure Docker auth for Artifact Registry
+        run: gcloud auth configure-docker ${{ env.AR_HOST }} --quiet
+
+      - name: Build Docker image (linux/amd64)
+        run: |
+          docker build \
+            --platform linux/amd64 \
+            --tag ${{ env.IMAGE }}:${{ github.sha }} \
+            --tag ${{ env.IMAGE }}:latest \
+            .
+
+      - name: Push image to Artifact Registry
+        run: |
+          docker push ${{ env.IMAGE }}:${{ github.sha }}
+          docker push ${{ env.IMAGE }}:latest
+
+      # Deploy hanya saat push ke main (bukan PR)
+      # worker-service: min-instances=1 agar Kafka consumer tidak mati
+      # EMAIL_FROM (nilai dengan spasi) aman di env_vars block karena
+      # deploy-cloudrun@v2 tidak melalui shell expansion.
+      - name: Deploy to Cloud Run
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        uses: google-github-actions/deploy-cloudrun@v2
+        with:
+          service: ${{ env.SERVICE_NAME }}
+          region: ${{ env.REGION }}
+          image: ${{ env.IMAGE }}:${{ github.sha }}
+          env_vars: |
+            OTEL_ENABLED=${{ vars.OTEL_ENABLED }}
+            OTEL_SAMPLE_RATIO=${{ vars.OTEL_SAMPLE_RATIO }}
+            APP_ENV=${{ vars.APP_ENV }}
+            APP_PORT=${{ vars.APP_PORT }}
+            LOG_LEVEL=${{ vars.LOG_LEVEL }}
+            LOG_FORMAT=${{ vars.LOG_FORMAT }}
+            KAFKA_BROKERS=${{ vars.KAFKA_BROKERS }}
+            KAFKA_TLS=${{ vars.KAFKA_TLS }}
+            KAFKA_CONSUMER_GROUP=${{ vars.KAFKA_CONSUMER_GROUP }}
+            EMAIL_HOST=${{ vars.EMAIL_HOST }}
+            EMAIL_PORT=${{ vars.EMAIL_PORT }}
+            EMAIL_USERNAME=${{ vars.EMAIL_USERNAME }}
+            EMAIL_FROM=${{ vars.EMAIL_FROM }}
+          env_vars_update_strategy: overwrite
+          secrets: |
+            EMAIL_PASSWORD=smtp-password:latest
+          secrets_update_strategy: overwrite
+          flags: >-
+            --allow-unauthenticated
+            --min-instances=1
+            --port=${{ vars.APP_PORT }}
+            --vpc-connector=${{ vars.VPC_CONNECTOR }}
+            --vpc-egress=private-ranges-only
+            --no-traffic
+
+      - name: Route traffic to new revision
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        run: |
+          gcloud run services update-traffic ${{ env.SERVICE_NAME }} \
+            --to-latest \
+            --region=${{ env.REGION }} \
+            --project=${{ env.PROJECT_ID }}
