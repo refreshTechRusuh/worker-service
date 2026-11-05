@@ -40,7 +40,7 @@ const (
 type Worker struct {
 	readers  []*kafkago.Reader
 	handler  *handler.NotificationHandler
-	producer *wkafka.Producer
+	producer wkafka.IProducer
 	log      *slog.Logger
 }
 

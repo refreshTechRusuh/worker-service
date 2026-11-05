@@ -3,6 +3,7 @@ package handler_test
 import (
 	"context"
 	"encoding/json"
+	"io"
 	"log/slog"
 	"sync"
 	"testing"
@@ -336,4 +337,94 @@ func TestHandleBookingCreated_UsePaymentExpiresAt(t *testing.T) {
 	// Waktu deadline harus lebih dari 20 menit ke depan (yakni dari PaymentExpiresAt, bukan default 10 menit)
 	// Verifikasi dengan check HTML mengandung tahun/bulan yang sesuai
 	assert.Contains(t, m.last().HTML, "2026", "deadline dari PaymentExpiresAt harus dirender")
+}
+
+// ── HandlePaymentExpired — branch coverage ───────────────────────────────────
+
+func TestHandlePaymentExpired_InvalidJSON(t *testing.T) {
+	m := &mockMailer{}
+	h := handler.NewNotificationHandler(m, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	err := h.HandlePaymentExpired(context.Background(), []byte("invalid-json"))
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "unmarshal payment.expired")
+}
+
+func TestHandlePaymentExpired_EmptyEmail_skips(t *testing.T) {
+	m := &mockMailer{}
+	h := handler.NewNotificationHandler(m, slog.New(slog.NewTextHandler(io.Discard, nil)))
+
+	ev := domain.PaymentExpiredEvent{
+		PaymentID: "pay-empty",
+		BookingID: "booking-empty",
+		EventID:   "event-1",
+		Email:     "", // kosong → handler harus skip tanpa error
+	}
+	err := h.HandlePaymentExpired(context.Background(), marshalEvent(t, ev))
+	require.NoError(t, err)
+	assert.Empty(t, m.messages, "email tidak boleh dikirim bila email kosong")
+}
+
+func TestHandlePaymentExpired_MailerError_returnsError(t *testing.T) {
+	m := &mockMailer{failNext: true}
+	h := handler.NewNotificationHandler(m, slog.New(slog.NewTextHandler(io.Discard, nil)))
+
+	ev := domain.PaymentExpiredEvent{
+		PaymentID: "pay-fail",
+		BookingID: "booking-fail",
+		EventID:   "event-1",
+		Email:     "fail@test.com",
+	}
+	err := h.HandlePaymentExpired(context.Background(), marshalEvent(t, ev))
+	require.Error(t, err)
+}
+
+// ── HandleBookingCreated — tambah branch ─────────────────────────────────────
+
+func TestHandleBookingCreated_InvalidJSON(t *testing.T) {
+	m := &mockMailer{}
+	h := handler.NewNotificationHandler(m, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	err := h.HandleBookingCreated(context.Background(), []byte("not-json"))
+	require.Error(t, err)
+}
+
+// ── HandlePaymentSucceeded — branch ──────────────────────────────────────────
+
+func TestHandlePaymentSucceeded_InvalidJSON(t *testing.T) {
+	m := &mockMailer{}
+	h := handler.NewNotificationHandler(m, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	err := h.HandlePaymentSucceeded(context.Background(), []byte("{bad"))
+	require.Error(t, err)
+}
+
+func TestHandlePaymentSucceeded_EmptyEmail_skips(t *testing.T) {
+	m := &mockMailer{}
+	h := handler.NewNotificationHandler(m, slog.New(slog.NewTextHandler(io.Discard, nil)))
+
+	ev := domain.PaymentSucceededEvent{
+		PaymentID: "pay-2",
+		BookingID: "booking-email-empty",
+		EventID:   "event-1",
+		Email:     "", // kosong → skip
+	}
+	err := h.HandlePaymentSucceeded(context.Background(), marshalEvent(t, ev))
+	require.NoError(t, err)
+	assert.Empty(t, m.messages)
+}
+
+func TestHandlePaymentSucceeded_MailerError(t *testing.T) {
+	m := &mockMailer{failNext: true}
+	h := handler.NewNotificationHandler(m, slog.New(slog.NewTextHandler(io.Discard, nil)))
+
+	ev := domain.PaymentSucceededEvent{
+		PaymentID: "pay-3",
+		BookingID: "booking-fail",
+		EventID:   "event-1",
+		Email:     "a@b.com",
+		EventName: "Konser",
+		Items: []domain.ItemEvent{
+			{CategoryID: "cat-1", NIK: "3273000000000001", CategoryName: "VIP", Name: "Budi"},
+		},
+	}
+	err := h.HandlePaymentSucceeded(context.Background(), marshalEvent(t, ev))
+	require.Error(t, err)
 }

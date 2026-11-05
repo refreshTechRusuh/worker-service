@@ -78,3 +78,10 @@ func (p *Producer) Publish(ctx context.Context, topic string, key, value []byte)
 
 // Close menutup koneksi writer.
 func (p *Producer) Close() error { return p.writer.Close() }
+
+// IProducer abstracts Kafka producer untuk testability.
+// *Producer memenuhi interface ini di production; mock di test.
+type IProducer interface {
+	Publish(ctx context.Context, topic string, key, value []byte) error
+	Close() error
+}
