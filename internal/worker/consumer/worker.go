@@ -112,9 +112,9 @@ func (w *Worker) Start(ctx context.Context) {
 // Close menutup semua reader dan producer.
 func (w *Worker) Close() {
 	for _, r := range w.readers {
-		r.Close()
+		r.Close() // #nosec G104 -- shutdown cleanup
 	}
-	w.producer.Close()
+	w.producer.Close() // #nosec G104 -- shutdown cleanup
 }
 
 func (w *Worker) consume(ctx context.Context, r IKafkaReader) {
@@ -274,7 +274,7 @@ func parseRetryCount(headers []kafkago.Header) int {
 	for _, h := range headers {
 		if h.Key == "X-Retry-Count" && len(h.Value) > 0 {
 			var n int
-			fmt.Sscanf(string(h.Value), "%d", &n)
+			fmt.Sscanf(string(h.Value), "%d", &n) // #nosec G104 -- retry count parse, defaults to 0 on error
 			return n
 		}
 	}
