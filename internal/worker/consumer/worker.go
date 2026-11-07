@@ -36,12 +36,25 @@ const (
 	retryDelayBase = 5 * time.Second // backoff: 5s, 10s, 20s (exponential)
 )
 
+// IKafkaReader abstracts kafkago.Reader for testability.
+// *kafkago.Reader satisfies this interface.
+type IKafkaReader interface {
+	ReadMessage(ctx context.Context) (kafkago.Message, error)
+	Config() kafkago.ReaderConfig
+	Close() error
+}
+
 // Worker adalah Kafka consumer runner untuk notification worker.
 type Worker struct {
-	readers  []*kafkago.Reader
+	readers  []IKafkaReader
 	handler  *handler.NotificationHandler
 	producer wkafka.IProducer
 	log      *slog.Logger
+}
+
+// NewForTest membuat Worker dengan readers yang sudah di-inject — hanya untuk unit test.
+func NewForTest(readers []IKafkaReader, h *handler.NotificationHandler, p wkafka.IProducer, log *slog.Logger) *Worker {
+	return &Worker{readers: readers, handler: h, producer: p, log: log}
 }
 
 func New(cfg config.KafkaConfig, h *handler.NotificationHandler, log *slog.Logger) *Worker {
@@ -54,7 +67,7 @@ func New(cfg config.KafkaConfig, h *handler.NotificationHandler, log *slog.Logge
 		TopicPaymentSucceededRetry,
 		TopicPaymentExpiredRetry,
 	}
-	readers := make([]*kafkago.Reader, 0, len(topics))
+	readers := make([]IKafkaReader, 0, len(topics))
 
 	for _, topic := range topics {
 		dialer := &kafkago.Dialer{Timeout: 10 * time.Second}
@@ -104,7 +117,7 @@ func (w *Worker) Close() {
 	w.producer.Close()
 }
 
-func (w *Worker) consume(ctx context.Context, r *kafkago.Reader) {
+func (w *Worker) consume(ctx context.Context, r IKafkaReader) {
 	topic := r.Config().Topic
 	for {
 		msg, err := r.ReadMessage(ctx)
