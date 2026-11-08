@@ -6,3 +6,7 @@ test:
 	go test -v ./...
 mod-tidy:
 	go mod tidy
+
+scan:
+	@echo "Running security scan"
+	gosec ./...

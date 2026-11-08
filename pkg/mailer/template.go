@@ -113,7 +113,7 @@ func formatRupiah(amount int64) string {
 		if i > 0 && (n-i)%3 == 0 {
 			result = append(result, '.')
 		}
-		result = append(result, byte(c))
+	result = append(result, byte(c)) // #nosec G115 -- c is ASCII digit/separator, fits in byte
 	}
 	return "Rp " + string(result)
 }

@@ -44,11 +44,12 @@ func main() {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
-		w.Write([]byte("ok")) //nolint:errcheck
+		w.Write([]byte("ok")) // #nosec G104 //nolint:errcheck
 	})
 	srv := &http.Server{
-		Addr:    fmt.Sprintf(":%d", cfg.App.Port),
-		Handler: mux,
+		Addr:              fmt.Sprintf(":%d", cfg.App.Port),
+		Handler:           mux,
+		ReadHeaderTimeout: 10 * time.Second, // prevent Slowloris
 	}
 	go func() {
 		slog.Info("worker-service health server listening", "port", cfg.App.Port)
@@ -66,6 +67,6 @@ func main() {
 	slog.Info("worker-service shutting down...")
 	cancel()
 	worker.Close()
-	srv.Close() //nolint:errcheck
+	srv.Close() // #nosec G104 //nolint:errcheck
 	slog.Info("worker-service stopped")
 }
