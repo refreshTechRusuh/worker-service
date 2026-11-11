@@ -23,6 +23,7 @@ type PaymentInstructionsData struct {
 	BuyerName       string         // dari field Items[0].Name, atau "Pelanggan"
 	Email            string
 	BookingID        string
+	EventName        string         // nama event untuk ditampilkan di email
 	WaktuTransaksi   time.Time
 	TotalAmount      int64          // rupiah
 	Items            []TicketLineItem
@@ -42,6 +43,7 @@ type ETicketData struct {
 type PaymentExpiredData struct {
 	Email     string
 	BookingID string
+	EventName string // nama event untuk konteks pembatalan
 }
 
 // TicketLineItem adalah satu tiket dalam email.
@@ -157,6 +159,7 @@ const paymentInstructionsTmpl = `<!DOCTYPE html>
 <tr><td style="padding:36px 32px 24px 32px;text-align:center;background-color:#f8fafc;border-bottom:1px solid #e2e8f0;">
 <div style="width:58px;height:58px;background-color:#eff6ff;border-radius:50%;border:2px solid #93c5fd;margin:0 auto 16px auto;line-height:58px;font-size:28px;text-align:center;">&#128393;</div>
 <h2 style="color:#0f172a;font-size:22px;font-weight:800;margin-bottom:8px;font-family:Arial,sans-serif;">Booking Berhasil Dibuat!</h2>
+{{if .EventName}}<p style="color:#4f46e5;font-size:15px;font-weight:700;margin-bottom:8px;font-family:Arial,sans-serif;">{{.EventName}}</p>{{end}}
 <p style="color:#64748b;font-size:14px;line-height:1.5;max-width:480px;margin:0 auto;font-family:Arial,sans-serif;">
 Halo <strong style="color:#0f172a;">{{.BuyerName}}</strong>, booking tiket kamu sudah tercatat. Selesaikan pembayaran sebelum batas waktu untuk mengamankan tiket.
 </p></td></tr>
@@ -324,6 +327,7 @@ const paymentExpiredTmpl = `<!DOCTYPE html>
 <tr><td style="padding:36px 32px 24px 32px;text-align:center;background-color:#fef2f2;border-bottom:1px solid #fecaca;">
 <div style="width:58px;height:58px;background-color:#fee2e2;border-radius:50%;border:2px solid #fca5a5;margin:0 auto 16px auto;line-height:58px;font-size:28px;text-align:center;">&#10060;</div>
 <h2 style="color:#0f172a;font-size:22px;font-weight:800;margin-bottom:8px;font-family:Arial,sans-serif;">Booking Dibatalkan</h2>
+{{if .EventName}}<p style="color:#ef4444;font-size:15px;font-weight:700;margin-bottom:8px;font-family:Arial,sans-serif;">{{.EventName}}</p>{{end}}
 <p style="color:#64748b;font-size:14px;line-height:1.5;max-width:480px;margin:0 auto;font-family:Arial,sans-serif;">
 Booking <strong style="color:#0f172a;">{{.BookingID}}</strong> telah dibatalkan karena batas waktu pembayaran terlampaui. Tiket yang direservasi telah dikembalikan ke pool.
 </p></td></tr>

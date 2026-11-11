@@ -67,6 +67,7 @@ func (h *NotificationHandler) HandleBookingCreated(ctx context.Context, raw []by
 		BuyerName:     buyerName,
 		Email:           ev.Email,
 		BookingID:       ev.BookingID,
+		EventName:       ev.EventName,
 		WaktuTransaksi:  time.Now(),
 		TotalAmount:     ev.TotalAmount,
 		Items:           items,
@@ -157,6 +158,7 @@ func (h *NotificationHandler) HandlePaymentExpired(ctx context.Context, raw []by
 	html, err := mailer.RenderPaymentExpired(mailer.PaymentExpiredData{
 		Email:     ev.Email,
 		BookingID: ev.BookingID,
+		EventName: ev.EventName,
 	})
 	if err != nil {
 		h.log.ErrorContext(ctx, "render payment expired failed", slog.Any("err", err))
