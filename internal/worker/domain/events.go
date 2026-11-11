@@ -6,6 +6,7 @@ package domain
 type BookingCreatedEvent struct {
 	BookingID        string      `json:"bookingId"`
 	EventID          string      `json:"eventId"`
+	EventName        string      `json:"eventName"`        // nama event untuk email #1
 	Email            string      `json:"email"`            // tujuan email instruksi bayar
 	Items            []ItemEvent `json:"items"`
 	TotalAmount      int64       `json:"totalAmount"`      // total dalam rupiah
@@ -30,7 +31,8 @@ type PaymentExpiredEvent struct {
 	PaymentID string `json:"paymentId"`
 	BookingID string `json:"bookingId"`
 	EventID   string `json:"eventId"`
-	Email     string `json:"email"` // tujuan email expired notice
+	EventName string `json:"eventName"` // nama event untuk email #3
+	Email     string `json:"email"`     // tujuan email expired notice
 }
 
 // ItemEvent adalah satu tiket dalam event payload.
