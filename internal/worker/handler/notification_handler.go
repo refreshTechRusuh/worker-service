@@ -200,11 +200,28 @@ func mapItems(domainItems []domain.ItemEvent, bookingID string) []mailer.TicketL
 			Nomor:        i + 1,
 			CategoryName: it.CategoryName,
 			Name:         it.Name,
-			NIK:          it.NIK,
+			NIK:          maskNIK(it.NIK), // tampilkan 4 digit awal + 4 digit akhir saja
 			Price:        it.Price,
 			TicketCode:   ticketCode,
 			QRCodeBase64: qrDataURL,
 		})
 	}
 	return items
+}
+
+// maskNIK menampilkan 4 digit awal dan 4 digit akhir, mengganti tengahnya dengan *.
+// Contoh: "3273000000000002" → "3273********0002"
+func maskNIK(nik string) string {
+	const show = 4
+	r := []rune(nik)
+	if len(r) <= show*2 {
+		return nik
+	}
+	masked := make([]rune, len(r))
+	copy(masked[:show], r[:show])
+	for i := show; i < len(r)-show; i++ {
+		masked[i] = '*'
+	}
+	copy(masked[len(r)-show:], r[len(r)-show:])
+	return string(masked)
 }

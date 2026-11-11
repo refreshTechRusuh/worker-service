@@ -157,7 +157,9 @@ const paymentInstructionsTmpl = `<!DOCTYPE html>
 
 <!-- HERO -->
 <tr><td style="padding:36px 32px 24px 32px;text-align:center;background-color:#f8fafc;border-bottom:1px solid #e2e8f0;">
-<div style="width:58px;height:58px;background-color:#eff6ff;border-radius:50%;border:2px solid #93c5fd;margin:0 auto 16px auto;line-height:58px;font-size:28px;text-align:center;">&#128393;</div>
+<div style="width:58px;height:58px;background-color:#eff6ff;border-radius:50%;border:2px solid #93c5fd;margin:0 auto 16px auto;display:flex;align-items:center;justify-content:center;">
+<svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#3b82f6" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" xmlns="http://www.w3.org/2000/svg"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+</div>
 <h2 style="color:#0f172a;font-size:22px;font-weight:800;margin-bottom:8px;font-family:Arial,sans-serif;">Booking Berhasil Dibuat!</h2>
 {{if .EventName}}<p style="color:#4f46e5;font-size:15px;font-weight:700;margin-bottom:8px;font-family:Arial,sans-serif;">{{.EventName}}</p>{{end}}
 <p style="color:#64748b;font-size:14px;line-height:1.5;max-width:480px;margin:0 auto;font-family:Arial,sans-serif;">
