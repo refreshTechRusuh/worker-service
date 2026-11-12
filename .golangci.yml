@@ -1,0 +1,25 @@
+version: "2"
+run:
+  timeout: 5m
+linters:
+  default: standard
+  exclusions:
+    generated: lax
+    presets:
+      - comments
+      - common-false-positives
+      - legacy
+      - std-error-handling
+    rules:
+      - linters: [errcheck]
+        path: _test\.go$
+      # Exporter Cloud Trace sudah ditandai deprecated oleh Google (pengganti: OTLP).
+      # Migrasi dicatat sebagai pekerjaan lanjutan, bukan alasan CI merah.
+      - linters: [staticcheck]
+        path: pkg/otel/tracing\.go$
+        text: "SA1019"
+formatters:
+  enable:
+    - gofmt
+  exclusions:
+    generated: lax
