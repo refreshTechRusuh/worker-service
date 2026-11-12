@@ -10,6 +10,7 @@ import (
 	"encoding/base64"
 	"fmt"
 	"html/template"
+	"net/url"
 	"strings"
 	"time"
 
@@ -70,12 +71,25 @@ var templateFuncs = template.FuncMap{
 // "data:image/png;base64,..." yang bisa langsung dipakai di atribut src tag <img>.
 // Size 256 cukup untuk scan di gerbang turnstile.
 // Dipanggil dari notification_handler.go sebelum render template.
+// CATATAN: data URI diblokir oleh Gmail dan mayoritas email client.
+// Gunakan BuildQRCodeURL untuk email, GenerateQRDataURL hanya untuk non-email use case.
 func GenerateQRDataURL(content string) (string, error) {
 	png, err := qrcode.Encode(content, qrcode.Medium, 256)
 	if err != nil {
 		return "", fmt.Errorf("generate qr code: %w", err)
 	}
 	return "data:image/png;base64," + base64.StdEncoding.EncodeToString(png), nil
+}
+
+// BuildQRCodeURL membangun URL ke QR code API service eksternal.
+// Menggunakan api.qrserver.com yang mendukung HTTPS dan tidak butuh API key.
+// Email client akan fetch gambar dari URL ini saat email dibuka — tidak diblokir.
+func BuildQRCodeURL(content string) string {
+	encoded := url.QueryEscape(content)
+	return fmt.Sprintf(
+		"https://api.qrserver.com/v1/create-qr-code/?size=256x256&data=%s&format=png&margin=4",
+		encoded,
+	)
 }
 
 // RenderPaymentInstructions merender HTML email #1 (instruksi bayar).
