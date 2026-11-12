@@ -190,11 +190,11 @@ func mapItems(domainItems []domain.ItemEvent, bookingID string) []mailer.TicketL
 		if ticketCode != "" {
 			qrContent = bookingID + ":" + ticketCode
 		}
-		qrDataURL, err := mailer.GenerateQRDataURL(qrContent)
-		if err != nil {
-			// Kalau gagal generate QR, fallback ke SVG placeholder di template.
-			qrDataURL = ""
-		}
+
+		// Gunakan URL ke QR API service (bukan base64 inline) agar email client
+		// tidak memblock gambar. Data URI (data:image/png;base64,...) diblokir
+		// Gmail dan mayoritas email client karena alasan keamanan.
+		qrDataURL := mailer.BuildQRCodeURL(qrContent)
 
 		items = append(items, mailer.TicketLineItem{
 			Nomor:        i + 1,
