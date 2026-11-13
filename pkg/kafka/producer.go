@@ -24,8 +24,13 @@ type RetryConfig struct {
 
 // Producer menulis pesan ke satu topic Kafka.
 type Producer struct {
-	writer *kafkago.Writer
+	writer messageWriter
 	log    *slog.Logger
+}
+
+type messageWriter interface {
+	WriteMessages(context.Context, ...kafkago.Message) error
+	Close() error
 }
 
 // NewProducer membuat Producer baru yang terhubung ke broker.

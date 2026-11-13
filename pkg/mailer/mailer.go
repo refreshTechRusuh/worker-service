@@ -27,13 +27,14 @@ type IMailer interface {
 
 // SMTPMailer mengimplementasikan IMailer via Gmail SMTP (port 587 STARTTLS).
 type SMTPMailer struct {
-	cfg config.EmailConfig
-	log *slog.Logger
+	cfg      config.EmailConfig
+	log      *slog.Logger
+	sendMail func(addr string, a smtp.Auth, from string, to []string, msg []byte) error
 }
 
 // New membuat instance SMTPMailer baru.
 func New(cfg config.EmailConfig, log *slog.Logger) *SMTPMailer {
-	return &SMTPMailer{cfg: cfg, log: log}
+	return &SMTPMailer{cfg: cfg, log: log, sendMail: smtp.SendMail}
 }
 
 // Send mengirim email HTML via SMTP dengan retry 1x.
@@ -51,7 +52,7 @@ func (m *SMTPMailer) Send(ctx context.Context, msg Message) error {
 
 	var lastErr error
 	for attempt := 1; attempt <= 2; attempt++ {
-		lastErr = smtp.SendMail(addr, auth, m.cfg.Username, []string{msg.To}, []byte(body))
+		lastErr = m.sendMail(addr, auth, m.cfg.Username, []string{msg.To}, []byte(body))
 		if lastErr == nil {
 			m.log.InfoContext(ctx, "email sent",
 				slog.String("to", msg.To),

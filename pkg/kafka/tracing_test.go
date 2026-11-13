@@ -7,6 +7,9 @@ import (
 	kafkago "github.com/segmentio/kafka-go"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/propagation"
+	"go.opentelemetry.io/otel/trace"
 )
 
 func TestKafkaHeaderCarrier_GetSetKeys(t *testing.T) {
@@ -105,4 +108,43 @@ func TestInjectExtract_RoundTrip(t *testing.T) {
 	// Extract dari message yang sama — tidak boleh panic
 	ctx := ExtractTraceContext(context.Background(), msg)
 	assert.NotNil(t, ctx)
+}
+
+func TestInjectExtract_RoundTripWithTraceContext(t *testing.T) {
+	previous := otel.GetTextMapPropagator()
+	otel.SetTextMapPropagator(propagation.TraceContext{})
+	t.Cleanup(func() { otel.SetTextMapPropagator(previous) })
+
+	traceID, err := trace.TraceIDFromHex("4bf92f3577b34da6a3ce929d0e0e4736")
+	require.NoError(t, err)
+	spanID, err := trace.SpanIDFromHex("00f067aa0ba902b7")
+	require.NoError(t, err)
+	sc := trace.NewSpanContext(trace.SpanContextConfig{TraceID: traceID, SpanID: spanID, TraceFlags: trace.FlagsSampled})
+	ctx := trace.ContextWithSpanContext(context.Background(), sc)
+	msg := kafkago.Message{Topic: "booking.created"}
+
+	InjectTraceContext(ctx, &msg)
+	require.Len(t, msg.Headers, 1)
+	assert.Equal(t, "traceparent", msg.Headers[0].Key)
+	assert.Equal(t, "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01", string(msg.Headers[0].Value))
+
+	extracted := ExtractTraceContext(context.Background(), msg)
+	assert.Equal(t, traceID, trace.SpanContextFromContext(extracted).TraceID())
+}
+
+func TestStartProduceAndConsumeSpans(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		start func(context.Context, string) (context.Context, trace.Span)
+	}{
+		{name: "producer", start: StartProduceSpan},
+		{name: "consumer", start: StartConsumeSpan},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			ctx, span := tc.start(context.Background(), "booking.created")
+			require.NotNil(t, ctx)
+			require.NotNil(t, span)
+			span.End()
+		})
+	}
 }

@@ -41,16 +41,7 @@ func main() {
 	worker := consumer.New(cfg.Kafka, notifHandler, slog.Default())
 
 	// Health server -- Cloud Run butuh HTTP endpoint untuk startup/liveness probe
-	mux := http.NewServeMux()
-	mux.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusOK)
-		w.Write([]byte("ok")) // #nosec G104 //nolint:errcheck
-	})
-	srv := &http.Server{
-		Addr:              fmt.Sprintf(":%d", cfg.App.Port),
-		Handler:           mux,
-		ReadHeaderTimeout: 10 * time.Second, // prevent Slowloris
-	}
+	srv := newHealthServer(cfg.App.Port)
 	go func() {
 		slog.Info("worker-service health server listening", "port", cfg.App.Port)
 		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
@@ -69,4 +60,17 @@ func main() {
 	worker.Close()
 	srv.Close() // #nosec G104 //nolint:errcheck
 	slog.Info("worker-service stopped")
+}
+
+func newHealthServer(port int) *http.Server {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte("ok")) // #nosec G104 //nolint:errcheck
+	})
+	return &http.Server{
+		Addr:              fmt.Sprintf(":%d", port),
+		Handler:           mux,
+		ReadHeaderTimeout: 10 * time.Second, // prevent Slowloris
+	}
 }

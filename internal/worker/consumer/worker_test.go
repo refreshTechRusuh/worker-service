@@ -3,12 +3,62 @@
 package consumer
 
 import (
+	"io"
+	"log/slog"
 	"testing"
 
+	"github.com/refreshTechRusuh/worker-service/internal/config"
+	"github.com/refreshTechRusuh/worker-service/internal/worker/handler"
 	kafkago "github.com/segmentio/kafka-go"
+	"github.com/segmentio/kafka-go/sasl/plain"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+func TestNewBuildsReadersWithKafkaSecuritySettings(t *testing.T) {
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	notificationHandler := handler.NewNotificationHandler(nil, logger)
+	worker := New(config.KafkaConfig{
+		Brokers:       "broker-a:9092,broker-b:9092",
+		Username:      "worker",
+		Password:      "secret",
+		TLS:           true,
+		ConsumerGroup: "notifications",
+	}, notificationHandler, logger)
+	t.Cleanup(worker.Close)
+
+	expectedTopics := []string{
+		TopicBookingCreated, TopicPaymentSucceeded, TopicPaymentExpired,
+		TopicBookingCreatedRetry, TopicPaymentSucceededRetry, TopicPaymentExpiredRetry,
+	}
+	require.Len(t, worker.readers, len(expectedTopics))
+	for i, reader := range worker.readers {
+		cfg := reader.Config()
+		assert.Equal(t, expectedTopics[i], cfg.Topic)
+		assert.Equal(t, "notifications", cfg.GroupID)
+		assert.Equal(t, []string{"broker-a:9092", "broker-b:9092"}, cfg.Brokers)
+		require.NotNil(t, cfg.Dialer.TLS)
+		assert.Equal(t, uint16(0x0303), cfg.Dialer.TLS.MinVersion)
+		mechanism, ok := cfg.Dialer.SASLMechanism.(plain.Mechanism)
+		require.True(t, ok)
+		assert.Equal(t, "worker", mechanism.Username)
+		assert.Equal(t, "secret", mechanism.Password)
+	}
+}
+
+func TestNewBuildsReadersWithoutKafkaSecurity(t *testing.T) {
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	worker := New(config.KafkaConfig{Brokers: "localhost:9092", ConsumerGroup: "default"}, nil, logger)
+	t.Cleanup(worker.Close)
+
+	require.Len(t, worker.readers, 6)
+	for _, reader := range worker.readers {
+		cfg := reader.Config()
+		assert.Equal(t, []string{"localhost:9092"}, cfg.Brokers)
+		assert.Nil(t, cfg.Dialer.TLS)
+		assert.Nil(t, cfg.Dialer.SASLMechanism)
+	}
+}
 
 // ── stripRetry ────────────────────────────────────────────────────────────────
 

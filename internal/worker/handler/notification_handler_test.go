@@ -387,6 +387,30 @@ func TestHandleBookingCreated_InvalidJSON(t *testing.T) {
 	require.Error(t, err)
 }
 
+func TestHandleBookingCreated_InvalidExpiryUsesFallback(t *testing.T) {
+	m := &mockMailer{}
+	h := handler.NewNotificationHandler(m, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	ev := domain.BookingCreatedEvent{
+		BookingID:        "booking-invalid-expiry",
+		Email:            "buyer@example.test",
+		PaymentExpiresAt: "not-a-rfc3339-time",
+	}
+
+	require.NoError(t, h.HandleBookingCreated(context.Background(), marshalEvent(t, ev)))
+	require.Equal(t, 1, m.count())
+	assert.Contains(t, m.last().HTML, "WIB")
+}
+
+func TestHandleBookingCreated_MailerFailureReturnsError(t *testing.T) {
+	m := &mockMailer{failNext: true}
+	h := handler.NewNotificationHandler(m, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	ev := domain.BookingCreatedEvent{BookingID: "booking-mail-failure", Email: "buyer@example.test"}
+
+	err := h.HandleBookingCreated(context.Background(), marshalEvent(t, ev))
+	require.Error(t, err)
+	assert.ErrorIs(t, err, assert.AnError)
+}
+
 // ── HandlePaymentSucceeded — branch ──────────────────────────────────────────
 
 func TestHandlePaymentSucceeded_InvalidJSON(t *testing.T) {
@@ -409,6 +433,17 @@ func TestHandlePaymentSucceeded_EmptyEmail_skips(t *testing.T) {
 	err := h.HandlePaymentSucceeded(context.Background(), marshalEvent(t, ev))
 	require.NoError(t, err)
 	assert.Empty(t, m.messages)
+}
+
+func TestHandlePaymentSucceeded_UsesDefaultEventName(t *testing.T) {
+	m := &mockMailer{}
+	h := handler.NewNotificationHandler(m, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	ev := domain.PaymentSucceededEvent{BookingID: "booking-no-event-name", Email: "buyer@example.test"}
+
+	require.NoError(t, h.HandlePaymentSucceeded(context.Background(), marshalEvent(t, ev)))
+	require.Equal(t, 1, m.count())
+	assert.Contains(t, m.last().Subject, "Konser")
+	assert.Contains(t, m.last().HTML, "Konser")
 }
 
 func TestHandlePaymentSucceeded_MailerError(t *testing.T) {
