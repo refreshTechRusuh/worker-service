@@ -66,7 +66,7 @@ func newHealthServer(port int) *http.Server {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
-		w.Write([]byte("ok")) // #nosec G104 //nolint:errcheck
+		_, _ = w.Write([]byte("ok")) // #nosec G104
 	})
 	return &http.Server{
 		Addr:              fmt.Sprintf(":%d", port),
