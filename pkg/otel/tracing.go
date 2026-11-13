@@ -20,6 +20,23 @@ import (
 	"go.opentelemetry.io/otel/trace/noop"
 )
 
+// Function variables keep setup paths testable without contacting Google Cloud.
+var (
+	createTraceExporter = func() (sdktrace.SpanExporter, error) { return texporter.New() }
+	detectResource      = func(ctx context.Context, serviceName, version string) (*resource.Resource, error) {
+		return resource.New(ctx,
+			resource.WithDetectors(gcp.NewDetector()),
+			resource.WithAttributes(
+				semconv.ServiceName(serviceName),
+				semconv.ServiceVersion(version),
+			),
+			resource.WithTelemetrySDK(),
+		)
+	}
+	setTracerProvider    = otel.SetTracerProvider
+	setTextMapPropagator = otel.SetTextMapPropagator
+)
+
 // SetupTracerProvider inisialisasi global TracerProvider dan TextMapPropagator.
 //
 // Di Cloud Run: export ke GCP Cloud Trace menggunakan credential dari metadata server (WIF).
@@ -28,8 +45,8 @@ import (
 // Mengembalikan shutdown func yang harus dipanggil saat graceful shutdown.
 func SetupTracerProvider(ctx context.Context, serviceName, version string) (func(context.Context) error, error) {
 	if os.Getenv("OTEL_ENABLED") == "false" {
-		otel.SetTracerProvider(noop.NewTracerProvider())
-		otel.SetTextMapPropagator(propagation.NewCompositeTextMapPropagator(
+		setTracerProvider(noop.NewTracerProvider())
+		setTextMapPropagator(propagation.NewCompositeTextMapPropagator(
 			propagation.TraceContext{},
 			propagation.Baggage{},
 		))
@@ -37,21 +54,14 @@ func SetupTracerProvider(ctx context.Context, serviceName, version string) (func
 	}
 
 	// Exporter ke GCP Cloud Trace.
-	exporter, err := texporter.New()
+	exporter, err := createTraceExporter()
 	if err != nil {
 		return nil, fmt.Errorf("otel: create cloud trace exporter: %w", err)
 	}
 
 	// Resource: GCP detector otomatis mengisi project-id, service name, revision, instance-id
 	// saat berjalan di Cloud Run. Di lokal hanya mengisi service.name dari semconv.
-	res, err := resource.New(ctx,
-		resource.WithDetectors(gcp.NewDetector()),
-		resource.WithAttributes(
-			semconv.ServiceName(serviceName),
-			semconv.ServiceVersion(version),
-		),
-		resource.WithTelemetrySDK(),
-	)
+	res, err := detectResource(ctx, serviceName, version)
 	if err != nil {
 		// Resource detection error di lokal (non-GCP) adalah wajar; lanjut dengan resource minimal.
 		res = resource.NewWithAttributes(
@@ -75,8 +85,8 @@ func SetupTracerProvider(ctx context.Context, serviceName, version string) (func
 	)
 
 	// Set global TracerProvider dan propagator (W3C TraceContext + Baggage).
-	otel.SetTracerProvider(tp)
-	otel.SetTextMapPropagator(propagation.NewCompositeTextMapPropagator(
+	setTracerProvider(tp)
+	setTextMapPropagator(propagation.NewCompositeTextMapPropagator(
 		propagation.TraceContext{},
 		propagation.Baggage{},
 	))
